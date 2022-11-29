@@ -1,0 +1,88 @@
+---
+title: "Tutorial2"
+author: "E"
+date: "15/08/2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(knitr)
+```
+
+1. Create a file - some sort of reproducible report - that can incorporate your explanations, code and output (analysis and plots etc).
+
+### Solution
+Create a R Markdown file
+
+2. Load the diamonds dataset. This is saved in the tidyverse package.
+# Solution
+
+```{r data1}
+pacman::p_load(tidyverse, inspectdf)
+diamonds
+```
+
+
+3. Check the data to see if there are any entries missing (i.e. are there any NA’s?).
+
+```{r data2}
+diamonds %>% inspect_na()
+```
+
+
+
+4. Determine how many types of cut there are. What are they? Show how many diamonds there are of each particular cut.
+
+```{r data3}
+unique(diamonds$cut)
+```
+
+```{r data4}
+count(diamonds, cut)
+```
+
+5. Your boss wants to know whether the price of the diamonds depends more on cut or color Using ggplot, produce two side-by-side boxplots of price, one using cut and one using color. Which variable appears to affect price more, cut or color?
+
+```{r data5}
+ggplot(diamonds, aes(x=cut, y = price, fill = cut)) +
+geom_boxplot()
+```
+
+```{r data6}
+ggplot(diamonds, aes(x=color, y = price, fill = color)) +
+geom_boxplot()
+```
+## Colour appears to affect price more
+
+
+
+6. If a customer wants to buy a Premium diamond, with color rating J, how much should they expect to pay on average
+```{r data7}
+diamonds %>%
+filter(cut == "Premium", color == "J") %>%
+summary()
+```
+6. If a customer wants to buy a Premium diamond, with color rating J, how much should they expect to pay on average?
+
+
+
+
+
+
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

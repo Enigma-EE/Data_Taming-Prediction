@@ -1,0 +1,53 @@
+---
+title: "Tutorial3"
+author: "E"
+date: "17/08/2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(knitr)
+```
+
+
+## Lists
+
+### Bulleted list
+
+* Milk
+* Eggs
+* Chocolate
+
+### Number list
+
+1. Post Office
+1. Bank
+1. Coles
+
+## Text
+
+\texttt{RMarkdown}\
+$\mathbf{Hello\ Word}$
+
+
+
+## Mathematical writing
+
+$$y=3x+4$$
+$$y = \beta_0 + \beta_{12}x$$
+
+$$y = \frac{a+b}{c}$$
+
+
+$$y = \frac{\overline{x}-x_0}{\sqrt{\frac{\sigma}{n}}}$$
+
+```{r otter, echo=FALSE, out.width="20%", fig.align='center'}
+ include_graphics("sample.JPG",, error = FALSE)
+```
+
+
+
+
