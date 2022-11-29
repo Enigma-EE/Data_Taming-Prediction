@@ -1,0 +1,49 @@
+---
+title: 'Quantitative Variables: Location, Spread and Histograms'
+author: "E"
+date: "18/08/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(knitr)
+pacman::p_load(tidyverse, inspectdf)
+```
+
+## quantitative variables - describe the centre and spread of the data
+## For continuous variables - the mean and standard deviation.
+
+## Picking the column displ - which records the mean engine displacement in litres
+
+```{r mean_sd}
+mean(mpg$displ)
+sd(mpg$displ)
+```
+
+
+Statisticians often talk about the 'five-number summary', describes a distribution of data in five numbers.
+
+1. sample minimum or smallest value
+1. first (or lower) quartile.
+1. median (or middle) value.
+1. third (or upper) quartile.
+1. sample maximum or largest value.
+
+
+```{r summary_d}
+summary(mpg$displ)
+```
+
+# summary(mpg$displ)
+
+## visualise the entire distribution by creating a histogram using ggplot
+
+```{r his_d}
+ggplot(mpg,aes(x = displ)) + geom_histogram(col = "black")
+```
+
+ggplot(mpg,aes(x = displ)) + geom_histogram(col = "black")
+
+
+

@@ -1,0 +1,803 @@
+---
+title: 'Week 8: Classification and Cross-Validation'
+author: "Huining H"
+date: "14/09/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(knitr,dplyr)
+pacman::p_load(tidyverse, inspectdf,tidyr,stringr, stringi)
+pacman::p_load(caret,modelr)
+pacman::p_load(mlbench,mplot)
+pacman::p_load(tidymodels)
+```
+
+
+# TidyModels
+
+In TidyModels, the process of preparing and fitting a model to your data is broken down into easy-to-understand, bite-sized chunks in a nice, consistent manner. Like TidyVerse, TidyModels is what is known as a metapackage, in that it doesn’t necessarily do anything itself, but it collects a whole bunch of nifty packages together to do some really nice things. The basic ideas of TidyModels can be broken down into three steps:
+
+**Prepare data.** You pre-process and split data into training and test sets to build and evaluate your model. This is done with the packages recipes (for pre-processing) and rsample (for splitting). You will see more on this later in the course.
+**Fit a model.** You choose a model and fit it to data. This is done with the package parsnip. You will get a little bit more in-depth with this soon.
+**Evaluate model.** Get numbers and graphs out to determine how well your model is doing. This is done with the package yardstick.
+
+
+# Fitting a Model
+
+Like almost every package hiding within TidyModels, the basic ideas of fitting a model with parsnip can be broken down into three parts.
+
+
+1.What model? You choose a model to fit to the data.
+1. What engine? You choose a package to fit the model with, which is called the engine in parsnip.
+1. Fit the model. Once we have specified a model type and an engine, you need to tell R to fit it.
+
+
+
+# TidyModels in Action
+
+You are now going to fit a logistic regression model to the Titanic dataset using TidyModels. 
+
+You are trying to predict the survival of passengers based on sex and age. Before all else, you need to make sure you have installed TidyModels with the following code.
+
+install.packages( "tidymodels" )
+
+## 1. Choose a model
+
+You already know you are going to fit logistic regression, so specify the model below.
+
+
+```{r tidymodel}
+library(tidymodels)
+
+LR_spec <- logistic_reg( mode = "classification" )
+LR_spec
+```
+
+
+What you have done here is defined a model specification. You have said you want to start creating a model, and that model is going to be logistic regression (logistic_reg() is the function). Further, you have told R that the logistic regression will be used for classification —this is what the mode = "classification" part of the code is doing. This is also where you would set any parameter values for the model.
+
+## 2. Set the engine
+
+The next thing you need to do is select a package to fit the model, known as setting the engine in parsnip. There are multiple packages you can use to fit logistic regression, but you are going to use the glm function
+
+```{r engineglm}
+Titanic_LR <- LR_spec %>%   
+ 
+  set_engine( "glm" )
+Titanic_LR
+```
+You have created a new step in your code, which says you are going to start fitting a logistic regression model to the Titanic dataset, and you want to set your engine to glm. 
+
+## 3. Fit the model
+
+The final step is to tell R to actually fit a model and give it your data. This is done with the fit() command, and is where you actually tell R what type of formula it is fitting and where the data is coming from.
+
+install.packages("titanic")
+library(titanic)
+
+```{r fitmodel}
+Titanic_df <- data.frame(Titanic)
+Titanic_LR <- LR_spec %>%   
+  set_engine( "glm" ) %>%   
+  fit(Survived~Age+Sex,data=Titanic_df)
+Titanic_LR
+```
+
+As you see, the fit() function has input that looks incredibly similar to what we used for linear regression by using the lm() function earlier. This is key to the design of parsnip so that we have a nice and simple way to input the data and formula we wish to fit, no matter which type of model we are trying to create. 
+
+
+# Prediction using Machine Learning
+
+To put it simply, machine learning is the art of prediction.
+The basic process is as follows:
+1. You get some data. In this data, you have:
+an outcome—this is the value you are ultimately interested in, like whether passengers on the Titanic survived or died, or how much fuel a car will use when driving through a city.
+predictors—this is basically everything else of relevance in the data. This is information that you wish to use to explain the outcome. It could be anything from a person’s age or height.
+1. You build a model. This is the ‘machine learning’ part. You take the data, and you try to model the outcome based on the predictors you care about. There are a variety of models you may consider. 
+1. You get some predictions. This is the ultimate goal of machine learning. This is as near as you can come to predicting the future. You basically take some new data that you know the predictors for, but not the outcome, and you get a good idea of what the outcome might be. The quality of this idea depends on the quality of your model.
+
+The main goal is to either classify given observations into two or more classes or groups, or get a predicted numerical value from some type of regression model.
+
+For a regression model, you might want to predict the price of a certain stock next month based on its previous history. Machine learning can be used in a variety of contexts and is a much sought-after skill in many graduates today. This week you are going to be focusing on classification models
+
+
+# Confusion Matrix
+ # ROC Curves — Part 1
+ 
+An ROC curve is a graphical way to represent how well a classification model performs at predicting a binary response variable. 
+
+So, what are ROC curves?
+
+Well, they are receiver operating characteristic curves.
+
+We’ll start by simulating some data. The data has a predictor, x, and a response variable, y, which takes the values 1 or 0. Let’s consider these to be success or failure, respectively.
+
+The equation for prob there is the inverted logit function.
+
+```{r sim_data}
+set.seed (1223)
+df <- tibble(
+ x = runif (500, max = 10),
+ y = rbinom (500, 1, prob = exp (x - 5) / (1 + exp (x - 5)))
+ )
+ df
+ 
+df %>%
+   ggplot ( aes ( x = x, y = y ) ) +  geom_jitter() +
+   geom_smooth() # This just fits a nice line to the data
+ 
+```
+
+So, as x gets larger, the probability of success increases. (The geom_jitter() command shuffles the y-values around a bit so that you can see them—this is why there are points above 1 and below 0.)
+
+
+Now, to fit a model to this, let’s stick with logistic regression (which you will see next week). You will fit it with parsnip, so remember you need to:
+
+1. specify the model
+1. specify the engine
+1. tell it what to fit.
+
+
+```{r fit_data}
+df.lr <- logistic_reg( mode= "classification" ) %>%
+    set_engine( "glm" ) %>%
+    fit ( as.factor ( y ) ~ x, data = df ) # We have used the as.factor function to stop R throwing a tantrum at us.
+
+summary( df.lr$fit )
+```
+
+Looks good! You will use this to predict the values for the observed data. To get a predicted probability of being in each class (class 0 or class 1), let’s use the predict function in R:
+
+```{r preds_data}
+df_preds <- predict (
+   object = df.lr, # The model we want to predict from
+   new_data = df, # The data we want to get predicted values for
+   type = "prob" # This tells us we want the probability values
+   )
+
+df_preds
+```
+
+From here (to make our lives easier), we are going to attach our predictions to our data. You can do this with the following code:
+
+```{r bind_preds_data}
+df <- df %>%
+   bind_cols ( df_preds )
+df
+```
+
+Now, let’s have a look at how the model is predicting.
+
+First, how does it look compared to the data?
+
+```{r preds_compared_data}
+ggplot( df, aes( x = x, y = as.numeric( y ) ) ) + 
+    geom_jitter() + 
+    geom_line( aes( y = .pred_1 ), col = "orange", size = 2 ) 
+```
+
+# ROC Curves — Part 2
+
+Now, we want to classify the value of the response variable, but the model returns a probability, so you need to make a decision on how to convert a probability to a decision on the level of the classifier.
+
+I suggest anything with a probability of 0.5 or greater should be a 1 and the rest a 0.
+
+```{r mutate_data}
+df <- df %>%  
+  mutate(  
+    y = as.factor ( y ), # Our response needs to be a factor for this to work
+
+     my_pred = as.factor( ifelse( .pred_1 >= 0.5, 1, 0 ) ) # So does our prediction
+    )
+df
+```
+
+
+How good is my classifier (model for classification)? Let’s use a confusion matrix to determine how well my model is at classification. This uses the yardstick package in TidyModels, and in particular the function conf_mat. This function takes three inputs:
+
+1. the data
+1. the known true value of our category
+1. our predicted value for that category.
+
+One thing you need to keep in mind is that our predicted classes (the predicted answer given by our model) and our true classes (the real value of each subject of the response variable) need to be recognised as factor variables in R (you will see I converted them in the code just before). Using conf_mat looks something like this:
+
+```{r conf_mat_data}
+df %>%  conf_mat( truth = y, estimate = my_pred) # confusion matrix
+```
+
+So, we have calculated the confusion matrix giving a sensitivity of:
+
+```{r sensitivity_data}
+my_sens <- 206 / (34 + 206)
+my_sens
+```
+
+and a specificity of:
+
+```{r specificity_data}
+my_spec <- 228 / (32 + 228)
+my_spec
+```
+
+# ROC Curves — Going Further
+
+Let’s consider other data scientists using this model. We will use examples of people at the University of Adelaide. First up, we have Mel. She thinks that a solid cut-off for classification is 0.3. So, we can calculate a confusion matrix for Mel with:
+
+```{r cut_mel}
+df <- df %>%
+  mutate (
+    mel_pred = as.factor ( ifelse ( .pred_1 >= 0.3, 1, 0 ) ) )
+
+df %>%
+    conf_mat ( truth = y, estimate = mel_pred )
+```
+
+Giving a sensitivity and specificity of:
+
+```{r sens_spec_mel}
+mel_sens <- 181 / (181 + 59)
+mel_sens
+mel_spec <- 247 / (13 + 247)
+mel_spec
+```
+
+So, her sensitivity is down (bad), but her specificity is up (good).
+
+Now, Jono wants to act tough, so he reckons that his cut-off for classification is 0.6.
+
+```{r cut_jono}
+df <- df %>%
+   mutate(   jono_pred = as.factor( ifelse( .pred_1 >= 0.6, 1, 0 ) )  )
+
+df %>%
+   conf_mat( truth = y, estimate = jono_pred )
+```
+
+
+```{r sens_spec_jo}
+jono_sens <- 215 / (215 + 25)
+jono_sens
+jono_spec <- 216 / (216 + 44)
+jono_spec
+```
+
+We see his sensitivity is up (good), but his specificity is down (bad).
+
+As for Gary, well, he is one tough cookie and he settles on a cut-off of 0.8.
+
+Let’s see his results.
+
+```{r cut_ga}
+df <- df %>%
+   mutate(   gary_pred = as.factor( ifelse( .pred_1 >= 0.8, 1, 0 ) )  )
+
+df %>%
+   conf_mat( truth = y, estimate = gary_pred )
+```
+
+```{r sens_spec_ga}
+gary_sens <- 228 / (228 + 12)
+gary_sens
+gary_spec <- 185 / (75 + 185)
+gary_spec
+```
+
+Now, we’ll put all of this information together.
+
+```{r sens_spec_all}
+rates <- tribble(
+   ~person, ~sensitivity, ~specificity,
+   "Me", my_sens, my_spec,
+   "Mel", mel_sens, mel_spec,
+   "Jono", jono_sens, jono_spec,
+   "Gary", gary_sens, gary_spec
+)
+
+rates %>%
+   arrange( sensitivity )
+```
+
+
+It looks like as sensitivity gets larger (good), specificity gets smaller (bad).
+
+Let’s make a plot of this with the sensitivity on the y-axis and 1−specificity on the x-axis.
+
+
+```{r sens_spec_plot}
+ggplot( rates, aes( x = 1 - specificity, y = sensitivity ) ) +
+   geom_point() +
+   xlim( 0, 1 ) +
+   ylim( 0, 1 ) +
+   theme_minimal()
+```
+
+
+
+# An Easy ROC with TidyModels
+
+TidyModels makes ROC curves super simple with the functions roc_curve and autoplot.
+
+You have your data df, and previously you added your predicted probabilities to it. Once your data is in this form (with your true values and your predicted probabilities), you can get your ROC curve with:
+
+  # Remember y is our true value, and .pred_1 is our predicted probabilities
+ 
+```{r roc_curve_df}
+df %>%
+  roc_curve( truth = y, estimate = .pred_0 ) %>% 
+  autoplot() 
+options(yardstick.event_first = T)
+```
+
+# A bad prediction model
+
+What about a bad predictive model? What would its ROC curve look like?
+
+Let’s guess each probability randomly between 0 and 1 and then plot the ROC curve for that.
+
+```{r roc_bad_df}
+df$bad_pred <- runif( 500 ) # Randomly guessing probabilities
+
+df %>%
+   roc_curve( truth = y, estimate = bad_pred ) %>%
+   autoplot( ) 
+```
+You can see that the ROC curve of the better method lies in the upper-left quadrant, and the random guess looks pretty much like the straight line y=x. 
+
+
+# Example — Titanic and Yardstick
+
+We are now going to look at an example of getting confusion matrices and ROC curves from some actual data. What better data to start with than the Titanic dataset...
+
+```{r titanic}
+library( titanic )
+titanic <- as_tibble( titanic::titanic_train )
+titanic <- titanic %>%
+   mutate(  Survived = factor( Survived ),
+            Pclass = factor( Pclass ),
+            Sex = factor( Sex )) %>%
+   select( Survived, Pclass, Sex, Age ) %>%
+   drop_na() # This removes rows with missing values. This saves us some headaches with prediction later.
+```
+
+You are going to fit the logistic regression model to this data. However, we are going to add in their cabin class as a predictor as well.
+
+```{r titanic_log}
+titanic_lr <- logistic_reg( mode = "classification" ) %>%
+   set_engine( "glm" ) %>%
+   fit( Survived ~ Age + Sex + Pclass, data = titanic )
+```
+
+Now, you want to predict from this model. This is done with the predict function. As a recap, this will take three arguments:
+
+a model
+some new data
+a type argument to tell us what we want our output to be.
+
+```{r titanic_predict}
+predict(  object = titanic_lr,
+          new_data = titanic,
+          type= "class"  )
+```
+
+
+You see here that the model is our logistic regression model, the new_data is our dataset (this will calculate how well our model is predicting the data you have built it on), and you have specified type="class", meaning you want to predict what class each person falls in, i.e. did they survive or did they die, are they a 1 or a 0?
+
+First up, let’s add our true class values to the prediction data.
+
+```{r titanic_true_predict}
+titanic_preds <- predict(  object = titanic_lr,
+                           new_data = titanic ,
+                           type = "class" ) %>%
+   bind_cols( titanic %>% select( Survived ) )
+
+titanic_preds %>%
+   tail( 10 ) #look at the last 10
+```
+
+You see here that the model is not predicting perfectly. Let’s quantify this a bit more. First, a confusion matrix.
+
+
+```{r titanic_con_matrix}
+titanic_preds %>%
+   conf_mat( truth = Survived, estimate = .pred_class ) 
+```
+
+So, this gives us a sensitivity of 0.8396226 and a specificity of 0.7137931, so our model with a cut-off of 0.5 is not doing perfectly, but it is far from bad.
+
+Let’s look at an ROC curve. To do this, you need the probability of being in each class, which you get by changing type in our predict function.
+
+```{r titanic_ROC}
+titanic_preds <- titanic_preds %>%
+   bind_cols(  predict( titanic_lr,
+                        new_data = titanic,
+                        type = "prob" )  )
+titanic_preds
+
+```
+
+```{r titanic_ROC_curve}
+titanic_preds %>%
+   roc_curve( truth = Survived, estimate = .pred_0) %>%
+   autoplot()
+options(yardstick.event_first = T)
+```
+You see a pretty good ROC curve. It is doing much better than simply guessing (which gives practically a straight line), but it is certainly not the best we can see. To characterise this in a number, we get the AUC (closer to 1 is better).
+
+For reference, you would expect a model that simply guesses the class of each subject to have an AUC of 0.5, and you would expect a model that perfectly characterises your data to have an AUC of 1.
+
+```{r titanic_auc}
+titanic_preds %>%
+  roc_auc(truth = Survived, .pred_0)
+```
+
+You see an AUC of 0.852. So, the model is doing pretty well at distinguishing between those passengers that survived the Titanic and those that did not.
+
+
+# Exercise — Let's Get Our ROC on
+
+There is a built-in dataset in R containing a plethora of information about player stats in 1986. The data can be found in the package corrgram and can be loaded (assuming you have the package installed) with:
+
+```{r baseball_data}
+data( baseball, package = "corrgram")
+```
+
+Now, this dataset contains a lot of information about individual players (find out exactly what with help("baseball"). What you are going to do is explore how well you can predict whether a player is in the American League or the National League at the beginning of 1987. To make your life a little bit easier, let’s select a subset of the available predictors.
+
+```{r baseball_select}
+baseball_new <- baseball %>%
+   as_tibble() %>%
+   select( League, Atbat, Hits, #Selecting just a few of the predictors
+           Homer, Runs, Years, Salary ) %>%
+   drop_na() #Getting rid of any missing values
+```
+
+Fit a logistic regression to this data using TidyModels, where the response variable is League and the predictors are everything else.
+
+```{r baseball_log}
+baseball_lr <- logistic_reg(mode = "classification") %>%
+   set_engine("glm") %>%
+   fit(League ~ ., data = baseball_new)
+```
+
+Calculate the class predictions from this model, and attach the true class labels so you can compare the two
+
+
+```{r baseball_class}
+baseball_preds <- predict( object = baseball_lr,
+                           new_data = baseball_new,
+                           type = "class") %>%
+   bind_cols(  baseball_new %>% select( League ) )
+
+baseball_preds
+```
+
+From these predictions, calculate the confusion matrix
+
+```{r baseball_confu}
+baseball_preds %>%
+   conf_mat( truth = League, estimate = .pred_class )
+```
+
+Calculate the specificity and sensitivity from this confusion matrix.
+
+```{r baseball_spec_sens}
+sens <- 86/(86 + 53)
+spec <- 72/(72 + 52)
+
+tibble( sensitivity = sens,
+        specificity = spec)
+```
+
+Calculate the class probabilities from this model. Be sure to add them on to your predictions
+
+```{r baseball_class_prob}
+baseball_preds <- baseball_preds %>%
+   bind_cols(  predict(   object = baseball_lr,
+                          new_data = baseball_new,
+                          type = "prob"  ) )
+baseball_preds
+```
+
+Obtain an ROC curve for this model
+
+```{r baseball_ROC_curve}
+baseball_preds %>%
+   roc_curve( truth = League, estimate = .pred_A ) %>%
+   autoplot()
+```
+
+What is the AUC for this model?
+
+```{r baseball_AUC}
+baseball_preds %>%
+   roc_auc( truth = League, .pred_A )
+```
+
+# Overfitting and Cross-Validation
+
+## Overfitting
+
+We are going to simulate a training dataset of observations (xi,yi), where x and y form an approximate linear relationship, y=2x. Let’s create five observations of this simple relationship, contaminated by a little bit of noise, and then fit a simple linear regression model to it. Have a go, and then take a look at my code below:
+
+```{r sim_data1}
+x <- seq( 1, 5 ) #Get all the whole numbers from 1 to 5
+y <- 2*x + rnorm( 5 , mean = 0 , sd = 0.5 ) # Add that little bit of noise
+
+training_data <- tibble( x = x, y = y )
+training_data
+```
+
+```{r sim_data_linear}
+training_data.lm1 <- lm( y ~ x )
+
+ggplot( training_data, aes( x = x, y = y ) ) +
+   geom_point( ) +
+   geom_line( aes( y = fitted( training_data.lm1 ) ) )
+```
+Great. Now that seems like the data fits a straight line pretty well, but can I do even better? My eye picks out a little bit of a bend between x=2 and x=4, going through x=3. I wonder if a different function, say a cubic, might fit the data better?
+
+Knowing how to create new variables with mutate, we can do this:
+
+```{r sim_data1_mute}
+training_data <- training_data %>%
+   mutate(  x2 = x^2,
+            x3 = x^3 )
+
+training_data
+```
+
+```{r sim_data1_overfit}
+training_data.lm2 <- lm( y ~ x + x2 + x3, data = training_data )
+
+ggplot( training_data, aes( x = x, y = y ) ) +
+   geom_point() +
+   geom_line( aes( y = fitted( training_data.lm2 ) ) )
+```
+
+Looks better, don’t you think?
+
+Wow, let’s go crazy. I bet it would be even better with a 5th-degree polynomial!
+
+```{r sim_data1_mute2}
+training_data <- training_data %>%
+   mutate(  x4 = x^4,
+            x5 = x^5 )
+
+training_data
+```
+
+```{r sim_data1_overfit5}
+training_data.lm3 <- lm( y ~ x + x2 + x3 + x4 + x5, data = training_data )
+ggplot( training_data, aes( x = x, y = y ) ) +
+   geom_point() +
+   geom_line( aes( y = fitted( training_data.lm3 ) ) )
+```
+
+Look at that: now the model fits the data perfectly!
+
+That should feel a little too good to be true—because it is. We’re doing prediction, so here comes a testing value that we wish to predict. We’ll plot the actual value in red, and the predicted value in blue:
+
+
+```{r sim_data_testing}
+testing_data <- tibble( x = 1.8, y = 1.85 )
+testing_data <- testing_data %>%
+   mutate(  x2 = x^2,
+            x3 = x^3,
+            x4 = x^4,
+            x5 = x^5 )
+
+testing_data <- testing_data %>%
+   mutate(  pred = predict( training_data.lm3,
+                            newdata = testing_data ) ) #Adds our predicted value to our data
+
+ggplot( training_data, aes( x = x, y = y ) ) +
+   geom_point() +
+   geom_point( data = testing_data, aes( x = x, y = pred), color = 'blue', size = 5 ) +
+   geom_point( data = testing_data, aes( x = x, y = y ), color = 'red', size = 5, shape = 'x')
+```
+
+
+What a terrible prediction. It over-predicts the value by 1.541798. Why did this happen?
+
+With the same number of data points as parameters, our system of equations for the model parameters has a unique solution, and we end up describing the training data perfectly. This is an overfit model—it fits the training dataset perfectly, but has precisely zero predictive power on the testing data. You just can’t fit a predictive model with too many parameters—it will work against you when it comes to actually doing the prediction.
+
+# Cross-Validation
+
+One of the classic methods to choose models that are to be used for prediction is cross-validation.
+
+Imagine that you want to create a predictive model that can be used in the future to predict outcomes. One way you could get a good model is to have two lots of data: one that you will use to train and perfect your model, and another to test it on. Cross-validation is going to give us a way to do that.
+
+We’ll consider k-fold cross-validation here. (There are some other types, e.g. ‘Leave one out’, but this is just a special case of k-fold). The idea is simple:
+
+Take your data.
+Split it into k parts.
+Use k-1 parts to train your model.
+Use the remaining part to measure how well the model fits.
+Repeat for all parts so that each has a go at being the test set.
+
+
+We will use accuracy to measure the performance of classification models.
+
+Now, accuracy is yet another metric we can pull from this table. It is simply the proportion of correctly labelled classes, that is:
+
+$$\textrm{accuracy} = \frac{ TP + TN }{ \text{Number of Observations} }\,\cdot$$
+
+# Example — rsample
+
+Let’s have a look at how to do cross-validation with TidyModels. This is made pretty easy with the package rsample. This package allows you to play around with your data and divide it up nicely on which to both build and test models. This means you can divide your data up into a training set and a testing set. The training set is used to build (or train) your model, and the testing set is used to evaluate your model to see how well it does. We are going to use rsample to create a 5-fold validation set of the Titanic data, which we will use to get good estimates of how well our logistic regression model does. First, create the cross-validation splits.
+
+```{r tiranic_cv}
+titanic_cv <- vfold_cv( 
+ data = titanic, 
+ v = 5, 
+ strata = Survived )
+titanic_cv
+```
+
+So, the function is called vfold_cv. (they use v instead of k; how sad). This function takes some inputs. The ones I have used are as follows:
+
+data: the data we want to split up.
+v: how many folds we want to make; we have chosen 5.
+strata: This tells R how we want to stratify our model. I have said we want to stratify by Survived. This means we want to keep the same proportion of those who survived in both the test and training set.
+
+There are two columns: splits and id. You see it has been broken into 5 chunks, exactly what we would expect with 5-fold cross-validation. (Remember the picture?) Now, let’s look closer at the splits.
+
+```{r tiranic_cv_split}
+titanic_cv %>% 
+ slice( 1 ) %>% #This grabs only the first row
+ pull( splits ) # This lets us look at the splits variable
+```
+
+So, you see we have some numbers here. The first number (571) refers to how many of the data points are in the training set, the second number (143) refers to how many numbers are in the testing set, and the last number (714) refers to the total number of data points available. Under the hood, R is using these numbers to keep track of specific subjects they are assigning to both the testing and training set. You can have a look at these sets by using the testing and training functions in rsample.
+
+
+```{r tiranic_test_set}
+## The testing set
+titanic_cv %>% 
+ slice( 1 ) %>% #This grabs only the first row
+ pull( splits ) %>% 
+ map_df( training ) #If you are unfamiliar with map, have a look at the help file. What is it doing? 
+```
+
+
+```{r tiranic_train_set}
+## The training set
+titanic_cv %>% 
+ slice( 1 ) %>% #This grabs only the first row
+ pull( splits ) %>% 
+ map_df( testing ) 
+```
+
+
+# Example — Resample — Build and Validate a Model
+
+https://myuni.adelaide.edu.au/courses/67016/pages/week-8-example-resample-build-and-validate-a-model?module_item_id=2284900
+
+
+# Exercise — To resample and Beyond
+
+set a seed, to ensure we all get the same results. You need to do this since cross-validation is a randomised procedure.
+
+```{r baseball1}
+baseball_new
+set.seed(1223)
+```
+
+
+Make a specification for a logistic regression model
+
+```{r lr_spec}
+ lr_spec <- logistic_reg( mode = "classification" ) %>% 
+ set_engine( "glm" )
+```
+
+Create a 5-fold cross-validation of the baseball_new dataset, stratified by League
+
+```{r baseball_5_flod_cv}
+baseball_5cv <- vfold_cv( baseball_new, v = 5, strata = League )
+baseball_5cv
+```
+
+Use fit_resamples to fit the logistic regression model League ~ . to the resampled data. Be sure to save the predictions.
+
+```{r baseball_resample}
+baseball_5cv_refit <-  fit_resamples(lr_spec, League ~ ., resamples = baseball_5cv, control = control_resamples(save_pred = TRUE))
+baseball_5cv_refit
+```
+
+Use collect_metrics to get the estimates of the accuracy and ROC of this model, as well as their standard errors.
+
+```{r baseball_collect_metrics}
+ baseball_5cv_refit %>% 
+ collect_metrics()
+```
+
+Confirm that these values are what you expect them to be by doing the following:
+1. unnest the .metrics variable.
+1. group_by the .metric type.
+1. summarise the .estimate to find the mean and standard error. The formula for the standard error is given by $$\frac{sd}{\sqrt{n}}$$
+
+```{r baseball_Confirm}
+baseball_5cv_refit %>% 
+ unnest(.metrics) %>% 
+ group_by(.metric) %>% 
+ summarise(
+  mean = mean(.estimate),
+  std_err = sd(.estimate)/sqrt(n())
+ )
+```
+
+Use collect_predictions to obtain the predictions from each cross-validation set.
+
+```{r baseball_collect_predictions}
+ baseball_5cv_refit %>% 
+  collect_predictions()
+```
+
+Obtain an ROC curve for each of the different folds:
+1. collect_predictions to get all the different predicted values.
+1. group by id to individualise each fold.
+1. Get the roc_curve with a truth of League and an estimate of .pred_N.
+1. Plot it with autoplot().
+
+```{r baseball_ROC_curve1}
+ baseball_5cv_refit%>% 
+ collect_predictions() %>% 
+ group_by(id) %>% 
+ roc_curve( truth = League, estimate = .pred_N ) %>% 
+ autoplot()
+options(yardstick.event_first = T)
+```
+
+Repeat steps 4–7 with 10-fold cross-validation.
+
+
+```{r baseball_resample_10}
+baseball_10cv <- vfold_cv( baseball_new, v = 10, strata = League )
+baseball_10cv_refit <-  fit_resamples(lr_spec, League ~ ., resamples = baseball_10cv, control = control_resamples(save_pred = TRUE))
+```
+
+```{r baseball_collect_10cv}
+baseball_10cv_refit %>% 
+ collect_metrics()
+```
+
+
+```{r baseball_10cv_Confirm}
+baseball_10cv_refit %>% 
+ unnest(.metrics) %>% 
+ group_by(.metric) %>% 
+ summarise(
+  mean = mean(.estimate),
+  std_err = sd(.estimate)/sqrt(n())
+)
+```
+
+```{r baseball_10cv_ROC_curve}
+baseball_10cv_refit%>% 
+ collect_predictions() %>% 
+ group_by(id) %>% 
+ roc_curve( truth = League, estimate = .pred_N ) %>% 
+ autoplot()
+options(yardstick.event_first = F)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

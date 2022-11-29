@@ -1,0 +1,411 @@
+---
+title: "Predicting with lots of straight lines"
+author: "Huining H"
+date: "10/09/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(knitr,dplyr)
+pacman::p_load(tidyverse, inspectdf,tidyr,stringr, stringi)
+pacman::p_load(caret,modelr)
+pacman::p_load(mlbench,mplot)
+```
+
+# How R Represents with Categorical Predictor Variables
+
+
+What is the favourite pet of some people in the Data Taming team?
+We asked some of the crew members to share their favourite pet and recorded this in a tibble:
+
+```{r pettribble}
+dt_team  <- tribble(
+  ~Person, ~Pet,
+  "Lewis", "Cat",
+  "Sash", "Cat",
+  "Leah", "Dog",
+  "Jono", "Rabbit",
+  "Cath", "Rabbit",
+  "Lachlann", "Dog"
+)
+dt_team
+```
+
+ R know that the variable Pet is a categorical variable with the command factor()
+ 
+ 
+```{r pet_cate}
+dt_team  <- 
+  dt_team %>%
+  mutate(Pet = factor(Pet))
+dt_team
+```
+
+to use the modelr package
+In this package, we have a command called model_matrix()
+
+```{r modelr}
+pacman::p_load(modelr)
+model_matrix(dt_team,~Pet)
+```
+
+We now have an intercept, plus two new columns: one for whether dog is your favourite pet or not (PetDog); and one for whether a rabbit is your favourite pet or not (PetRabbit). Check that these match with the given information. Now you can use these as predictors on the next page.
+
+
+# Interpretation of Categorical Predictors in Linear Models
+
+categorical predictor variables,use it on the chickwts dataset
+
+
+```{r chickwts}
+data("chickwts")
+chickwts  <- as_tibble(chickwts)
+chickwts
+```
+
+
+This tibble has two variables, the weight of chicks and the type of feed they were given. We are going to investigate which feed causes the greatest weight in chickens. Before we rush off with our new-fangled modelling methods, let's stop to have a look at the data with a box plot. 
+
+
+```{r chickwts_box}
+ggplot(chickwts,aes(feed, weight)) + 
+  geom_boxplot()
+```
+
+Casein has the highest median weight while horsebean has the lowest. Now we fit a linear model:
+
+Notice that, as long as we have set the variable to be a categorical variable, the linear model is no different to before.
+
+Now we look at the coefficients:
+
+```{r chickwts_lm}
+chickwts.lm  <- lm(weight ~ feed, data = chickwts)
+summary(chickwts.lm)
+```
+
+
+So we have five coefficients of the form feednameoffeed, for example the first one is feedhorsebeen. This has an estimated coefficient of −163.383. What does this mean?
+
+Well, we know that R has chosen a reference categorical. How do we know which one? Look at the coefficients – which one is missing?
+
+Casein is missing, so this must be the reference category. How did R decide this?
+
+It took the first level alphabetically.
+
+So the value of −163.383 means that we estimate the the mean weight of chicks on horsebean is −163.383 lower than the mean weight of chicks on casein. Is this significant? Yes, it has a P-value of 2.07×10−9 and so we have a significant (at the 5% level) difference in the mean weight of chicks on horsebean compared to the mean weight of chicks on casein.
+
+Is there any feed that does not have a significant mean weight different from the mean weight of chicks on casein?
+
+Yes, sunflower has a P-value of 0.812495 and so is not significantly different. If you go back to the box plot, you’ll see that this is the case.
+
+So we can see how individual diets compare to casein, but what about another question: does feed have an effect on mean weight gain of chicks?
+
+This we can access with an ANOVA test with the anova() command:
+
+
+
+```{r chickwts_anova}
+anova(chickwts.lm)
+```
+
+Here the P-value is the last column called Pr(>F) and in this case is 5.936×10−10. So we have a statistically significant effect of feed on mean weight gain of chicks at the 5% significance level (the P-value is less than 0.05).
+
+Consider the following data:
+
+
+```{r Treatment}
+df_treatme  <- tribble(
+  ~ID, ~Treatment,
+  "1", "A",
+  "2", "B",
+  "3", "C",
+  "4", "A",
+  "5", "B",
+  "6", "C"
+)
+df_treatme
+```
+
+
+
+```{r treat_cate}
+df_treatme  <- 
+  df_treatme %>%
+  mutate(Treatment = factor(Treatment))
+df_treatme
+```
+
+How many treatment levels are there?
+Three: A, B, and C.
+
+Hence, how many variables will you need to represent treatment?
+2
+
+Write the values of the variables.
+Check by using the model_matrix() command.
+```{r modelr_treat}
+model_matrix(df_treatme,~Treatment)
+```
+
+
+# Adding Multiple Predictors to Linear Models
+
+the framework of linear regression is pretty flexible and we can incorporate a second predictor just like this:
+
+$$y_i = \beta_0 + \beta_1 x_{i1} + \beta_2 x_{i2} + \epsilon_i$$
+What if I had 3, 4, or n predictors? You guessed it, the definition of multiple linear regression with n predictors looks like this:
+
+$$y_i = \beta_0 + \beta_1 x_{i1} + \ldots + \beta_n x_{in} + \epsilon_i$$
+
+# Fitting in R
+
+To fit a model for log(price) based on log(carat) and length, you would type this:
+
+```{r lm_diamond}
+data("diamonds")
+diamonds.lm2  <- lm(log(price) ~ log(carat) + x, data = diamonds)
+summary(diamonds.lm2)
+```
+
+
+That output tells us that our new model for price is:
+
+$$\log(price) = 7.97082 + 1.53579\times\log(carat) + 0.07373\times(length)$$
+
+To test this out, have a go at figuring out the price of a hypothetical diamond with log(carat)=0.5 (like in the previous week), and length x=4 mm.
+
+(Remember that your previous model predicted a price of $10,792.10.)
+
+My turn! Undoing the logarithm we have:
+
+price=exp(7.97082+1.53579×0.5+0.07373×4)
+
+which is $8,380.27!
+
+Does this make sense?
+
+Well, looking at your scatter(hex)plots of log(price) versus log(carat) and log(price) versus length, you can probably see that while a log(carat) of 0.5 is relatively high, a length of 4mm is relatively low, which explains why the price is lower here.
+
+Coming back to the output for a minute – see those two lines which read:
+
+## Residual standard error: 0.2624 on 53937 degrees of freedom
+## Multiple R-squared:  0.9331, Adjusted R-squared:  0.9331
+The residual standard error and R-squared values refer to how well the model fits the data – how spread out the points are around a straight line. Remember the mathematical model from the previous week showing the distance of the residuals from the straight line? The closer R-squared is to one, the better this fit is, and the same for the closer the residual standard error is to zero. These values tell us that our model fits the data quite well, and in fact has improved a tiny (tiny!) amount over the model with just one predictor (R-squared went from 0.933 to 0.9331 – wow!). If you want to adjust for the multiple predictions - don't worry, that’s what the Adjusted R-squared does for us. That the increase in R-squared is so small suggests that adding length into the model didn’t improve it all that much. We’ll talk more about model selection in a later section.
+
+# Dealing with Interactions Between Predictors
+
+By incorporating an interaction term into our regression model. Here’s how you do it:
+
+$$y_i = \beta_0 + \beta_1 x_{i1} + \beta_2 x_{i2} + \beta_3 x_{i1} x_{i2} + \epsilon_i.$$
+
+If I say that yi is log(price), xi1 is log(carat) and xi2 is the length variable, then the new term β3xi1xi2 represents the interaction. If there’s no interaction, I should find β3=0.
+
+```{r lmlog_diamond}
+summary(lm(log(price) ~ log(carat) + x + log(carat):x, data = diamonds))
+```
+
+So, the interaction coefficient log(carat):x isn’t zero here, but check out that P-value! It’s very small, as is the standard error on the estimate. That means we can conclude that this term is significantly different from zero. We can see an interaction here between length and log(carat), which also makes sense.
+
+
+## Exercises
+
+1. Load the mpg dataset.
+1. Fit a model to predict the city fuel efficiency using number of cylinders and displacement as predictors.
+1. Using the estimated coefficients, calculate the expected fuel efficiency for a 6-cylinder car with a total displacement of 2 litres.
+
+```{r mpg_data}
+data("mpg")
+mpg_lm  <- lm(cty ~ cyl + displ, data = mpg)
+predict(mpg_lm, newdata = tibble(displ = 2, cyl = 6))
+```
+
+
+# Using ANCOVA to Have Both Categorical and Quantitative Predictors
+
+## Regression with continuous and categorical variables
+
+We have quantitative predictors with interactions, and also categorical predictors, but to finish this week, we are going to put them together. This process is called Analysis of Covariance, or ANCOVA. ANCOVA is the method used where we have a quantitative and categorical predictor in a linear regression model. The idea is that you have multiple linear regression for each level of our categorical predictors.
+
+Our research question is to model the relationship between highway fuel efficiency (hwy) and displacement (disp), given the engine transmission — manual versus automatic.
+
+First, some cleaning:
+
+```{r mpg_cleaning}
+mpg  <- mpg %>% 
+  mutate(trans = ifelse(str_detect(trans, "auto"), "auto", "manual"))
+```
+
+And let's look at the relationships:
+
+```{r mpg_relationship}
+ggplot(mpg, aes(x = displ, hwy, col = trans)) + 
+  geom_point()  + 
+  labs(y = "Fuel efficiency", x = "Displacement") + 
+  scale_color_brewer(palette = "Set1")
+```
+We are going to consider three models: separate lines, parallel lines, and identical lines models. Let's start with the separate lines models.
+
+## Separate lines models
+
+In this model, we will fit a separate line for each level of the categorical predictors. So, one for manuals, and one for automatics.
+
+The model is:
+ $$Y_{i} = \beta_{0} + \beta_1 x_{i\text{,manual}} + \beta_2 x_{i\text{, displ}} + \beta_3 x_{i\text{,manual}}x_{i\text{, displ}} + \varepsilon_{i}, i= 1, \ldots, 234,$$
+where $$x_{i\text{,manual}}$$ is zero if the ith car is an automatic and one if it is a manual, and xi, displ is the displacement of the ith car.
+
+First let's fit this in R:
+
+```{r mpg_sep}
+mpg_sep  <- lm(hwy ~ trans + displ + trans:displ, data = mpg)
+summary(mpg_sep)
+```
+
+So, how do we get the two lines — the one for manuals and the one for automatics?
+
+* Automatics
+In this case, the value of xi,manual is zero and so the second and last term will be zero, hence we have:
+
+$$\begin{aligned} \text{hwy} &= \beta_{0} + \beta_2 \times \text{displacement} \\ &= 35.39457 - 3.52217 \times \text{displacement}. \end{aligned}$$
+
+* Manuals
+
+In this case, the value of xi,manual is one and so we have:
+
+$$\begin{aligned} \text{hwy} &= \beta_{0} + \beta_1 + \beta_2 \times \text{displacement} + \beta_3 \times \text{displacement} \\ &= 35.39457 + 0.02559 - 3.52217 \times \text{displacement} + 0.27194 \times \text{displacement}\\ & = 35.42016 -3.25023 \times \text{displacement}. \end{aligned}$$
+
+put these on the plot:
+
+```{r mpg_sep_p}
+ggplot(mpg, aes(x = displ, hwy, col = trans)) + 
+  geom_point()  + 
+  labs(y = "Fuel efficiency", x = "Displacement") + 
+  scale_color_brewer(palette = "Set1") + 
+  geom_smooth(method = "lm", se = FALSE)
+```
+
+Those lines look pretty parallel. Do we need separate slopes?
+
+We can check with an anova():
+
+
+```{r mpg_sep_anova}
+anova(mpg_sep)
+```
+
+Look at that final line — it is testing if we need an interaction term — which in this case equates to a difference in the slopes (go look at that model again). The P-value is 0.5385 and so we can remove that term. Hence, onto parallel lines models.
+
+
+# Parallel Lines Models
+
+The model is:
+
+$$Y_{i} = \beta_{0} + \beta_1 x_{i\text{,manual}} + \beta_2 x_{i\text{, displ}} + \varepsilon_{i}, i= 1, \ldots, 234.$$
+
+```{r mpg_para}
+mpg_par  <- lm(hwy ~ trans + displ, data = mpg)
+summary(mpg_par)
+```
+
+put Automatics and Manuals on the plot
+
+```{r mpg_paraAM}
+mpg$fit  <- predict(mpg_par)
+ggplot(mpg, aes(x = displ, hwy, col = trans)) + 
+  geom_point()  + 
+  labs(y = "Fuel efficiency", x = "Displacement") + 
+  scale_color_brewer(palette = "Set1") + 
+  geom_line(aes(y = fit), size = 1)
+```
+
+Those lines look pretty close — do we need two lines?
+
+Back to the anova()
+
+```{r mpg_para_anova}
+anova(mpg_par)
+```
+
+Look at that final line — it is testing if we need a separate intercept for each level. The P-value is 2.2×10−16 and so we need to two lines — parallel but with different slopes.
+
+# Identical Line Models
+
+The model is:
+$$Y_{i} = \beta_{0} + \beta_1 x_{i\text{, displ}} + \varepsilon_{i}, i= 1, \ldots, 234.$$
+
+We know how to fit this, but let’s do it for revision:
+
+```{r mpg_ident}
+mpg_ident  <- lm(hwy ~ displ, data = mpg)
+summary(mpg_ident)
+```
+
+
+And the final plot:
+
+```{r mpg_identp}
+ggplot(mpg, aes(displ, hwy, col = trans)) + 
+  geom_point() + 
+  geom_smooth(aes(group = 1), 
+              method = "lm", 
+              se = FALSE, col = "black") + 
+  scale_color_brewer(palette = "Set1")
+```
+
+
+# Practice Using ANCOVA
+
+1. Load the diamonds dataset.
+1. Filter the dataset for cut to be either ideal or fair using the following command:
+
+```{r diamonds_filter}
+diamonds  <- diamonds %>% filter(cut %in% c("Fair", "Ideal"))
+```
+
+1. Ensure that cut is a categorical variable with the command:
+
+```{r diamonds_cate_cut}
+diamonds  <- diamonds %>% mutate(cut = factor(cut, ordered = FALSE))
+```
+
+1. Fit an **identical** line model with the price as the response variable and carat as the predictor.
+
+```{r diamonds_iden}
+M1  <- lm(price ~ carat, data = diamonds)
+```
+
+1. Fit a **parallel** lines model with the price as the response variable and carat and cut as the predictors.
+
+```{r diamonds_para}
+M2  <- lm(price ~ carat + cut, data = diamonds)
+```
+
+1. Fit a **separate** lines model with the price as the response variable and carat and cut as the predictors.
+
+```{r diamonds_spar}
+M3  <- lm(price ~ carat * cut, data = diamonds)
+```
+
+
+1. Challenge: Which is the most appropriate model?
+
+```{r diamonds_app}
+summary(M3)
+```
+
+As we have a statistically significant interaction term, the separate line model is best.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

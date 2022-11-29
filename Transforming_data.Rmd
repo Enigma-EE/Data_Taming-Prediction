@@ -1,0 +1,249 @@
+---
+title: "week_5_Transforming data"
+author: "Huining H"
+date: "25/08/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(knitr,dplyr)
+pacman::p_load(tidyverse, inspectdf,tidyr,stringr, stringi)
+pacman::p_load(caret)
+pacman::p_load(mlbench)
+```
+
+
+```{r the caret package}
+pacman::p_load(caret)
+```
+
+```{r data_mpg}
+data("mpg")
+mpg
+```
+
+
+The command that we are after is the preProcess() function in caret. We will apply this to the data:
+
+```{r mpg_preprocess}
+mpg_preprocess  <- preProcess(mpg)
+mpg_preprocess
+```
+
+Think of this as creating a recipe for pre-processing. The default methods are:
+
+  **center**: take the sample mean from each observation
+  **scale**: divide each observation by the sample standard deviation.
+The function has looked at our data and worked out that we should center and scale five variables, while the rest should be ignored.
+
+At this stage, our data has not been affected. The function had a good look at the data for us and warmed up, but does not do anything until we tell it to. To do this, we use the predict function (remembering to save the data):
+
+```{r mpg_predict}
+mpg1  <- predict(mpg_preprocess, mpg)
+mpg1
+```
+
+
+ transforming you data using  caret.
+ 
+ 1. Simulate some data using the following command:
+ 
+```{r simulate_data1}
+set.seed(2019)
+df  <- tibble(
+  treatment = rep(c("A", "B"), each = 10), 
+  obs = rnorm(20)
+)
+df
+```
+ 2. What is the smallest value in the A group?
+
+The smallest value is -1.64.
+
+
+3. Apply centering, but not scaling, to the simulated dataset.
+
+```{r simulate_centering}
+pacman::p_load(caret)
+df_preprocess  <- preProcess(df, method = "center")
+df  <- predict(df_preprocess, df)
+df
+```
+
+4. Now, what is the smallest value in the A group?
+The smallest value is -1.37.
+
+# Log Transformations to Adjust for Skewness
+
+If our aim is to try and transform our data to a distribution that looks like a standard normal, or at least roughly symmetric, then z-standardisation is a pretty limited tool. In fact, it doesn’t do anything at all if our dataset is skewed. Unfortunately, a lot of real data can be pretty skewed.
+
+summary(twitter)
+
+ggplot(twitter, aes(followers)) + 
+  geom_histogram() + 
+  xlim(0, 2000)
+  
+
+How do we transform this to a more symmetric distribution? When confronted with skewed data, a common trick is to use a log-transformation:
+
+$$log_{10}x$$,
+
+Or in this case:
+
+$$log_{10}(x+1)$$,
+
+Because we have zeros in the data and you can’t take the logarithm of zero. (You knew that, right?) If we do that here, we get:
+
+twitter %>% 
+twitter %>% 
+  mutate(logfollowers = log10(followers + 1)) %>%
+  ggplot(aes(logfollowers)) +
+  geom_histogram()
+  
+# Automatic Transformations Using the Box-Cox Approach
+
+dice
+
+ggplot(dice,aes(SideWidth,Volume)) + geom_point() + geom_smooth()
+
+
+pacman::p_load(caret)
+
+bc <- BoxCoxTrans(y = dice$Volume,x = dice$SideWidth)
+bc
+
+dice <- mutate(dice, TransformedVolume = predict(bc,dice$Volume))
+ggplot(dice,aes(SideWidth,TransformedVolume)) + 
+  geom_point() + 
+  geom_smooth()
+
+# Principal Component Analysis (PCA)
+
+principal component analysis (PCA). 
+a common method of dimension reduction.
+
+
+```{r mlbench}
+pacman::p_load(mlbench)
+```
+
+
+```{r data_BreastCancer}
+data(BreastCancer)
+BreastCancer <- tbl_df(BreastCancer)
+BreastCancer
+```
+
+This dataset involves 683 biopsy samples that were submitted to Dr Wolberg, University of Wisconsin Hospitals Madison, Wisconsin, USA between 1989 and 1991. For each sample, various cellular measurements were recorded and also whether the diagnosis was malignant or benign.
+
+
+?BreastCancer
+
+There is a lot of information to take in here, and, in fact, we simply have two many predictors to visualise easily. This is where PCA comes in. 
+
+PCA transforms the data into its principal components. The first principal component is the combination of the predictors that explains the most variation between subjects, based on the predictors. The second principal component is the combination of the predictors that explains the most variation between subjects based on the predictors once we have taken into account the first principal component, and so on.
+
+remove any subjects that have missing values as PCA cannot cope with missing values
+
+```{r na_BreastCancer}
+BreastCancer <- na.omit(BreastCancer)
+```
+
+```{r predictors1_BreastCancer}
+predictors <- 
+  BreastCancer %>% 
+  select(Cl.thickness:Mitoses)
+predictors
+```
+
+
+
+```{r predictors2_BreastCancer}
+predictors <- 
+  predictors %>% 
+  mutate_all(as.numeric)
+predictors
+```
+
+
+
+perform PCA and get the first two principal components
+
+```{r PCA_BreastCancer}
+PCA <- princomp(predictors, scores = TRUE)
+BreastCancer$PC1 <- PCA$scores[,1]
+BreastCancer$PC2 <- PCA$scores[,2]
+
+ggplot(BreastCancer,aes(PC1, PC2)) + geom_point(aes(col = Class))
+```
+
+the first principal component separates the subjects reasonably well into benign and malignant.
+
+explanation, refer to Principal Component Analysis Explained Visuallyhttp://setosa.io/ev/principal-component-analysis/.
+
+
+# Summarising Your Variables
+
+census, where you measure variables on all the subject in the population, 
+calculated  parameter, which is a numerical characteristic of a population.
+
+How would you guess the proportion of the marbles in the population that are blue if you can only measure 20 of them?
+
+And this is key concept of statistics. How can we estimate population parameters when we cannot measure everything?
+
+The best way is to take a sample — a small subset of the population — and use this to estimate the parameter by using the appropriate statistic, which is a numerical characteristic of a sample.
+
+What’s the best way to take a sample?
+
+By randomly selecting our subjects, so that each subject in the populations is equally likely to be selected.
+
+
+
+# Point Estimates
+https://myuni.adelaide.edu.au/courses/67016/pages/week-5-point-estimates?module_item_id=2284680
+
+
+
+# Confidence Intervals and How to Use Them
+https://myuni.adelaide.edu.au/courses/67016/pages/week-5-confidence-intervals-and-how-to-use-them?module_item_id=2284681
+
+# Calculating Confidence Intervals
+
+*the sample mean, sample standard deviation, and the number of observations
+
+mpg1
+```{r mpg_mean_sd}
+sample_mean <- mean(mpg1$cty)
+sample_sd  <-  sd(mpg1$cty)
+n  <- length(mpg1$cty)
+```
+
+Next, we need that cut off point tN−1(0.025), which we calculate using the Student t-distribution, with N−1 degrees of freedom:
+
+*Calculate the cutoff point
+
+```{r mpg_cut}
+t <- qt(p = 0.025, df = N-1, lower.tail = FALSE)
+```
+
+
+The p = 0.025 is because we want 2.5% of the distribution to be in each tail, so 95% in the middle. If you wanted a 90% confidence interval, you’d use p = 0.05, and so on.
+
+
+```{r mpg_ends}
+## Calculate the lower point
+lwr <- sample_mean - t * sample_sd / sqrt(n)
+## Calculate the upper point
+upr <- sample_mean + t * sample_sd / sqrt(n)
+## Look at interval
+ci <- c(lwr = lwr, upr = upr)
+ci
+```
+
+The 95% confidence interval is (-0.129, 0.129).
+
+We are 95% confident that the population mean city fuel efficiency of cars which had a new release every year between 1999 and 2008, lies between -0.129 and 0.129 city miles per gallon.
+
+
+

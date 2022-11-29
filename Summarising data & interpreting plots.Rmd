@@ -1,0 +1,225 @@
+---
+title: 'Week 4: Summarising data & interpreting plots'
+author: "E"
+date: "18/08/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(knitr)
+pacman::p_load(tidyverse, inspectdf)
+```
+
+
+# Categorical data: tables and bar charts
+
+
+## the appropriate way to summarise categorical variable is tables and bar charts.
+
+Looking at the MPG dataset, the columns containing characters (<chr>) are categorical variables. Let’s take the first column, the manufacturer. How many of each brand of car are there?
+
+```{r tables_m}
+table(mpg$manufacturer)
+```
+
+## the proportion of each type of car
+
+```{r prop_m}
+prop.table(table(mpg$manufacturer))
+```
+
+## represent this information as a bar chart
+
+```{r bar_plot_m}
+ggplot(mpg,aes(x = manufacturer)) + geom_bar()
+```
+
+this command is telling R to:
+
+1. make a canvas which will visualise data from the mpg dataframe (ggplot(mpg));
+1. map the single aesthetic  manufacturer to the x-axis of this canvas(aes(manufacturer));
+1. and then add a bar chart layer showing this to the plot (+ geom_bar()).
+
+
+# Quantitative Variables: Location, Spread and Histograms
+
+quantitative variables - describe the centre and spread of the data
+For continuous variables - the mean and standard deviation.
+
+Picking the column displ - which records the mean engine displacement in litres
+
+```{r mean_sd}
+mean(mpg$displ)
+sd(mpg$displ)
+```
+
+Statisticians often talk about the 'five-number summary', describes a distribution of data in five numbers.
+
+1. sample minimum or smallest value
+1. first (or lower) quartile.
+1. median (or middle) value.
+1. third (or upper) quartile.
+1. sample maximum or largest value.
+
+
+```{r summary_d}
+summary(mpg$displ)
+```
+
+
+## visualise the entire distribution by creating a histogram using ggplot
+
+```{r his_d}
+ggplot(mpg,aes(x = displ)) + geom_histogram(col = "black")
+```
+
+
+# Comparing Variables
+
+```{r com_v, echo=FALSE, out.width="80%", fig.align='center'}
+ include_graphics("DATA_7201OL_categorical_quantitative.png")
+```
+
+As shown in the image above, and from the video on the previous page, we can see that for the following comparisons the plots are:
+
+* Categorical versus categorical: bar charts
+* Quantitative versus quantitative: scatterplots
+* Quantitative versus categorical: box plots
+* Categorical versus quantitative: box plots.
+
+These suggestions are not the only possibilities, but are a good starting point.
+
+
+# Categorical Versus Categorical
+
+a categorical variable is a variable that consists of labels; 
+e.g. colour of eyes. 
+The various values that the label can take are often called the **levels** of the variable, in the eye colour case, the levels are:
+
+blue
+brown
+hazel
+green
+grey
+amber
+
+```{r data_mpg}
+library(tidyverse)
+data(mpg)
+mpg
+```
+
+So the two categorical variables that I am interested in are manufacturer and trans. From the figure, we see that manufacturer is on the x-axis and we have a bar chart.
+
+```{r manufa_bar}
+ggplot(mpg, aes(x = manufacturer)) + geom_bar()
+```
+
+now need to add the colour for the trans. As this is filling the rectangle, we call it fill.
+
+ 
+```{r manufa_bar_fill}
+ggplot(mpg, aes(x = manufacturer, fill = trans)) + geom_bar()
+```
+ 
+This is not quite right. At the moment, for each manufacturer on the y-axis, we see the count for each transmission type. We want to convert this to a proportion to make it easier to compare.
+
+
+ 
+```{r manufa_bar_f2}
+ggplot(mpg, aes(x = manufacturer, fill = trans)) + 
+  geom_bar(position = "fill", col = "black") + 
+  theme(axis.text.x = element_text(angle = -90, hjust=0))
+``` 
+ 
+Notice that the command position = "fill" does the job, I also added a colour = "black" to outline the rectangles. Finally, I rotated the x-axis labels.
+
+
+
+# Interpreting Bar Charts
+
+https://myuni.adelaide.edu.au/courses/67016/pages/week-4-interpreting-bar-charts?module_item_id=2284630
+
+
+# Quantitative Versus Quantitative
+
+## Creating scatterplots
+
+if there’s a relationship between a car’s engine size (the displ variable) and its fuel efficiency in the city (the cty variable, measured in miles per gallon). 
+
+```{r displ_cty}
+ggplot(mpg, aes(x = displ, y = cty)) + geom_point()
+``` 
+
+As engine size increases, fuel efficiency decreases. 
+
+# Interpreting Scatterplots
+
+https://myuni.adelaide.edu.au/courses/67016/pages/week-4-interpreting-scatterplots?module_item_id=2284632
+
+
+# Categorical Versus Quantitative
+
+quantitative versus categorical variables with side-by-side boxplots.
+
+Creating boxplots
+
+So we start by setting the x-axis - manufacturer and the y-axis - displacement
+
+```{r box_m_d}
+ggplot(mpg, aes(x = manufacturer, y = displ)) + 
+  geom_boxplot()
+``` 
+
+
+```{r box_m_d_2}
+ggplot(mpg, aes(x = fct_reorder(manufacturer, displ), 
+                y = displ, 
+                fill = manufacturer)) + 
+  geom_boxplot(show.legend = FALSE) + 
+  theme(axis.text.x = element_text(angle = -90, hjust=0)) + 
+  labs(x = "Manufacturer", y = "Displacement (litres)")
+``` 
+
+# Looking at Boxplots
+
+https://myuni.adelaide.edu.au/courses/67016/pages/week-4-looking-at-boxplots?module_item_id=2284634
+
+Load the mpg dataset.
+What type of variable is drv
+
+```{r mpg_data}
+data(mpg)
+mpg
+``` 
+
+Drive is a categorical nominal variable.
+
+Produce an appropriate plot to look at it.
+
+```{r drv_bar}
+ggplot(mpg, aes(drv)) + geom_bar()
+``` 
+
+What type of variable is displ?
+
+displ is a quantitative continuous variable.
+
+Produce an appropriate plot to look at it.
+
+```{r displ_his}
+ggplot(mpg, aes(displ)) + geom_histogram()
+``` 
+
+Finally produce a plot to compare displ to drv.
+
+```{r dry_displ}
+ggplot(mpg, aes(drv, displ)) + geom_boxplot()
+``` 
+
+
+Describe the relationship.
+
+
+We see that front-wheel drive cars have on average lower displacement compared to 4-wheel drive cars, which are lower than rear-wheel drive. The spread (height of rectangles) is about the same for all drives, and there is one potential outlier for front-wheel drive at a value of 5.3 litres.

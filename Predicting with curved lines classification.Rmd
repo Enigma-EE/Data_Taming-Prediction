@@ -1,0 +1,514 @@
+---
+title: "Predicting with curved lines / classification"
+author: "Huining H"
+date: "07/10/2021"
+output: html_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(knitr,dplyr)
+pacman::p_load(tidyverse, inspectdf,tidyr,stringr, stringi)
+pacman::p_load(caret,modelr)
+pacman::p_load(mlbench,mplot)
+pacman::p_load(tidymodels,glmx)
+pacman::p_load(skimr)
+```
+
+# the Logistic Function
+
+
+load up the (charmingly-titled) BeetleMortality dataframe from the glmx library
+```{r BeetleMortality}
+library(glmx)
+data( "BeetleMortality" )
+as_tibble( BeetleMortality )
+```
+```{r BeetleMortality_plot}
+BeetleMortality <- BeetleMortality %>%
+   mutate( prop_died = died/n )
+
+ggplot( BeetleMortality , aes( x = dose, y = prop_died ) ) +
+   geom_point() +
+   geom_smooth( se = FALSE ) 
+#We want to fit a line to the data, but not include any error bounds
+```
+
+```{r titanic}
+library( titanic )
+library( skimr )
+
+titanic <- as_tibble( titanic::titanic_train )
+titanic <- titanic %>%
+   mutate( Survived = factor( Survived ),
+                Pclass = factor( Pclass ),
+                Sex = factor( Sex ) #This ensures some variable of interest are correctly read in as factors
+   ) 
+
+skim_without_charts( titanic )
+```
+
+You are now going to try and predict whether a passenger survived the disaster or not. Specifically, you are going to do this with a method known as logistic regression
+
+Let’s use Sex and Age as our predictors. So, you are going to fit a logistic regression on Survived with predictors Sex and Age, and it works like this:
+
+```{r titanic_log}
+titanic.glm <- glm( Survived ~ Age + Sex, family = binomial(), data = titanic )
+summary( titanic.glm )
+```
+
+Let’s break that command down. This tells R to:
+
+use the glm function to create a generalised linear model
+predict whether or not a passenger Survived based on their Age and Sex
+use a binomial distribution for the observations (meaning that they can be 0 or 1–people can’t be anything other than alive or dead, which seems reasonable!)
+utilise the titanic dataset to build this model.
+The result gets stored in titanic.glm.
+
+Notice that you’ve used both a continuous predictor (Age) and a categorical one (Sex) in this example and females have been chosen as the reference category (because remember R works alphabetically!), giving Sexmale as the coefficient found.
+
+The coefficient for Sexmale is negative (-2.465920) and highly significant (Pr(>|z|) < 2e-16 ***), meaning that men are significantly less likely to survive than women. However, the coefficient for Age (-0.005426) is not significantly different from zero (Pr(>|z|) = 0.39) so we can’t say the 'children' part of 'women and children first' holds true. 
+
+
+#  Logistic Regression Exercise
+
+Groups of 20 snails were held for periods of 1, 2, 3 or 4 weeks and exposed to carefully controlled climate conditions to see what effect these conditions had on their survival.
+
+```{r snail}
+snails <- MASS::snails %>% as_tibble()
+```
+library(MASS)
+data("snalis")
+as.tibble(snails)
+
+```{r snail_skim}
+skim_without_charts(snails)
+help("snails")
+```
+
+
+96 observations on 6 variables.
+
+Variables are:
+
+Species
+Length of exposure
+Relative humidity
+Temperature
+The number of deaths
+The total number of snails per group.
+All have been read in as numeric, except for species which is a factor
+
+Everything but N and Deaths should probably be factors, but are fine as numeric as we can always convert them later.
+
+
+R is smart. As in, R is really smart. As in, R can deal with numbers way bigger than 0s and 1s. The logistic regression model assumes that the outcome (in this case, the number of snails that died) is binomial. If you have observed something that is binomial, then it has a bunch of 'successes' and 'failures'. All you have to do to fit a logistic regression in R is give a list of successes and failures as the outcome variable (the thing on the left-hand side of the ~).
+
+In this example, you are interested in how many snails died. So, the number of successes is how many snails died in each trial, and the number of failures is how many snails survived. You can fit this model with the following command:
+
+```{r snail_log}
+snails_logistic <- glm(  
+   cbind( Deaths, N - Deaths ) ~ . ,  
+   data = snails,  
+   family = binomial()
+)
+summary(snails_logistic)
+```
+For any categorical predictors, list the levels it can take.
+Species
+Levels “A”, and “B”. “A” is the reference level.
+Exposure
+Rel.Hum
+Temp
+
+
+Print out this matrix cbind( Deaths, N - Deaths ) 
+```{r snail_matrix}
+cbind( snails$Deaths,snails$N - snails$Deaths )[1:10,]
+```
+
+
+On the left-hand side is the outcome cbind( Deaths, N - Deaths ). This is a matrix with two columns. The first column contains all our “Death” values, or our successes. The second column contains all our “Survived” values (N - Death), or our failures.
+
+On the right-hand side of the command:
+cbind( Deaths, N -Deaths ) ~ . you see we simply have a single dot. This is a shorthand way of telling R that you want to fit the model on absolutely all available things in the dataframe that are not outcomes.
+
+Is species “B” more or less likely to die than species “A”? Why?
+“B” is more likely to die since the coefficient of SpeciesB is positive
+
+What is the value of the residual deviance?
+55.07
+
+Write down the estimated logistic regression equation. Remember the response will be of the form
+$$\mathrm{logit}(\hat{\pi}_i) = \log\left(\frac{\hat{\pi}_i}{1-\hat{\pi}_i}\right)$$
+$$\mathrm{logit}(\hat{\pi}_i) = -1.405 + 1.309\times SpeciesB_i + 1.503\times Exposure_i - 0.107 \times Rel.Hum_i + 0.094 \times Temp_i$$
+
+What is the estimated log-odds (logit) of a snail not surviving for a snail from species A that is exposed for 2 weeks, kept in a temperature of 20º and a relative humidity of 60%? What is the estimated probability of not surviving? 
+
+### Predicting the log-odds
+
+snail.odds <- -1.405 + 1.309 * 0 + 1.503 * 2 - 0.107 * 60 + 0.094 * 20
+snail.odds
+
+```{r snail_logodds}
+predict( snails_logistic,
+         newdata = tibble( Species = "A",
+                           Exposure = 2,
+                           Rel.Hum = 60,
+                           Temp = 20 ) )
+```
+
+### Predicting the probability
+
+exp(snail.odds)/(1 + exp(snail.odds))
+
+
+```{r snail_prob}
+predict( snails_logistic, 
+         newdata = tibble( Species = "A", 
+                           Exposure = 2, 
+                           Rel.Hum = 60, 
+                           Temp = 20), 
+         type = "response") 
+```
+
+# Poisson Regression
+$$Y_i \sim Poi(\mu_i)\,$$
+The Poisson distribution is a discrete variable that can take values like 0, 1, 2, i.e., it takes discrete counting numbers. It is used to model things that we can count. It has a single parameter−mu that tells us the number of counts we expect. As mu gets larger, then we expect more things to count.
+
+The next thing is a link function like the logit function you use for logistic regression. For Poisson regression, the right type of link function to consider is a logarithmic link log(μi). Finally, you need a linear model. 
+
+$$\log(\mu_i) = \beta_0 + \beta_1 x_{i1} + \beta_2 x_{ i2 } + \ldots + \beta_p x_{ip}\, .$$
+
+https://myuni.adelaide.edu.au/courses/67016/pages/week-9-poisson-regression?module_item_id=2284871
+
+
+#  Poisson Regression Exercise
+
+For this exercise, you are going to look at the medpar data in the COUNT package. This a random sample of the US national Medicare inpatient hospital database. You are going to build a Poisson regression model to model the length of stay in hospital based on some of the patients’ information.
+
+First of all, install the COUNT package with:
+
+
+```{r medpar_data}
+install.packages( "COUNT" )
+data( "medpar", package = "COUNT" )
+medpar
+```
+
+## Skim the medpar data and look at the help file (help("medpar")).
+
+
+```{r medpar_skim}
+skim_without_charts( medpar )
+```
+
+
+1. What are the variables?
+The variables are los, hmo, white, died, age80, type, type1, type2, type3, and provnum.
+
+1. What types of variables are they (e.g. integer, factor, etc)?
+They have all been read in as integers (or according to the skim, characters and numeric).
+
+1. Have they all been read in as the correct type?
+They have not been read in correctly, with type being notably wrong. This should be a factor.
+
+1. Are there any redundant variables?
+type1, type2, type3 and provnum are all redundant.
+
+
+## Change medpar to a tibble, and select only the variables los, hmo, white, died, age80 and type. Also, change type to a factor variable. 
+
+```{r medpar_tibble}
+medpar1 <- medpar %>%
+  as_tibble() %>%
+  dplyr::select( -c( type1, type2, type3, provnum ) ) %>%
+  mutate( type = as.factor(type) )
+medpar1
+```
+
+
+## Fit a Poisson regression model to the data with the length of stay (los) as the response variable and everything else as predictors. Print out the model summary to get a better feel for the model.
+
+```{r medpar_poisson}
+medpar_Pois1 <- glm( los ~ . ,                     
+                                    data = medpar1,                     
+                                    family = poisson( link = "log" ) )
+summary( medpar_Pois1 )
+```
+
+
+## Looking at your summary, are there any predictors that are not significant at the 5% level? If so, remove the predictor with the largest p-value and refit the model. Repeat this until all predictors are significant.
+
+Age80 is not significant with a p-value of  0.39363 
+
+Removing age80, all predictors are now significant.
+
+```{r medpar_poisson}
+medpar_Pois2 <- update( medpar_Pois1, . ~ . - age80 )
+summary( medpar_Pois2 )
+```
+
+On average, do those who identify as Caucasian stay longer or shorter than those who do not identify as Caucasian? Why?
+Those who identify as Caucasian stay a shorter amount of time since the coefficient of white is negative.
+
+Which type of admission (type 1, 2 or 3) has the longest average stay in hospital? Why?
+Type 3 admission has the longest stay, since it has the highest coefficient.
+
+What is the estimated regression equation? Remember that your response variable will be \log(\hat{\mu}_i).
+
+$$\begin{aligned} \log(\hat{\mu}_i) = 2.389 - 0.0699 \times hmo_i - 0.137 \times white_i - 0.245 \times died_i \\ + 0.24 \times I\{ type = 2 \} + 0.746 \times I\{ type = 3 \} \end{aligned}$$
+
+Using your estimated regression equation, what would you estimate as the average length of stay for a Caucasian patient, who belongs to the Health Maintenance Organization, who had type 1 admission and did not die? (Remember that the regression equation gives us \log(\hat{\mu}_i), so we are looking for \hat{\mu}_i = \exp(\log(\hat{\mu}_i)).)
+
+In the situation given, white = 1, hmo = 1, died = 0, and  I{type=2}=I{type=3}=0 .
+$$\log(\hat{\mu}_i) = 2.1821$$
+
+$$\hat{\mu}_i = 8.865 \, \text{ days. }$$
+mu.log <- 2.389 - 0.0699 - 0.137mu.log
+exp( mu.log )  
+
+```{r medpar_case1}
+# Or we can use the predict function.
+# We first need to create a new tibble with the variable names EXACTLY THE SAME as the names
+# in the original dataset.
+
+newdata <- tibble( hmo = 1,
+                   white = 1,
+                   died = 0,
+                   type = "1" )
+
+# We then use the predict function as we see below.
+
+predict( medpar_Pois2, newdata = newdata ) # For log(mu)
+predict( medpar_Pois2, newdata = newdata, type = "response" ) # For mu
+```
+
+# Regression Trees
+
+the Hitters dataset. We could use this darkest to try to predict a player’s salary based on a variety of their statistics (how many homeruns they made, etc.).
+ 
+
+```{r Hitters}
+data( "Hitters", package = "ISLR" )
+Hitters <- Hitters %>% 
+  tibble() %>% 
+  drop_na()
+skim( Hitters )
+```
+
+# Regression Trees — An Example
+
+The first thing we are going to do is create a split of the data into a testing and training set.
+
+```{r Hitters_train}
+set.seed( 1223 ) # Don't want to forget our seed
+hitters_split <- initial_split( Hitters ) # Create our split object
+hitters_train <- training( hitters_split ) # Get our testing and training sets
+hitters_test <- testing( hitters_split )
+```
+
+Here, we have used three functions from the rsample package that allow us to break our data up into testing and training sets really easily.
+
+The first function is initial_split. This creates an rsplit object and looks like:
+
+hitters_split
+
+## <Analysis/Assess/Total>
+## <197/66/263>
+
+All this does is keep track of which points we want to consider for our testing set and which points we want to consider for our training set. The first number (197) refers to how many points will be in our training set, and the second number (66) is how many points are in our testing set. The default for initial_split is to split your data so that 75% is in your training set and 25% is in the testing set. This can be changed using the prop argument in initial_split.
+
+ The next functions we use are testing and training. For these, we give them the rsplit object (our initial split), and they pull out our testing and training sets in full for us to mess with!
+
+now we need to make our model specification for our regression tree. This is done with the decision_tree function:
+
+
+```{r Hitters_tree}
+reg_tree_spec <- decision_tree( mode = "regression" ) %>% 
+  set_engine( "rpart" ) # This is the default engine, which we will use.
+```
+
+we are not going to worry about any hyperparameters at the moment. Let’s just go ahead and use the defaults for now. We fit the tree with:
+
+```{r Hitters_fit}
+hitters_tree <- reg_tree_spec %>% 
+  fit( Salary ~ . , data = hitters_train )
+plot( hitters_tree$fit )
+text( hitters_tree$fit, pretty = 0 )
+```
+
+So there are a total of 8 splits occurring in the data, with 9 terminal nodes. This means that the predictor space would be broken into 9 chunks in total, and the predicted salary will be the mean salary in each of those areas. We can also look at this tree in a different way by printing the model output: This printout gives us the rules for how the tree was created, if you want to look more closely at it.
+
+hitters_tree
+
+This is looking all pretty good—we have a decision tree for predicting. Before continuing on to look at how the decision tree does with prediction, let’s have a look at which variables are important. Graphically, this can be done with the vip package
+
+
+```{r Hitters_vip}
+package = "vip" # Variable Importance Plot
+hitters_tree %>% 
+  vip( num_features = 13 ) + # There are 13 predictors being used in this model
+  theme_minimal()
+```
+
+Okay, for variable importance, the bigger the better. So it looks like the total number of runs batted the player has had in their career (CRBI) is the most important variable for our regression tree and the number of times at bat in 1986 is the least important (AtBat). But how do we quantify this variable importance?
+
+For the regression trees we are considering here, we judge a variable by how much it reduces our residual sum of squares (RSS) given by:
+
+$$\mathrm{RSS} = \sum_{i = 1}^n ( y_i - \hat{y}_i )^2\, ,$$
+
+where \hat{y}_i is the predicted value for person i in our regression tree. The ‘why’ of why we are interested in the reduction of the RSS will become more apparent when I go into the theory of regression trees, but, for now, I’d like you to accept this.
+
+So, for instance, looking at the variable importance values:
+
+```{r Hitters_vi}
+hitters_tree %>% 
+  vi()
+```
+
+You can see that CRBI reduces the RSS by a whopping 23971773 in this model.
+
+# Regression Trees — Predicting
+
+predict on training data
+
+```{r Hitters_train_predict}
+hitters_train_preds1 <- hitters_tree %>% 
+  predict( new_data = hitters_train ) %>% 
+  bind_cols( hitters_train ) 
+hitters_train_preds1
+```
+
+How well does this model perform on this data?
+
+```{r Hitters_perform}
+hitters_train_preds1 %>% 
+  metrics( truth = Salary, estimate = .pred)
+```
+So, the RMSE is $241 and the R2 is 0.732; neither great nor completely horrid. But remember what I talked about last week? It is a bad idea it to predict on the training set because, by definition, our models always try to minimise the error here. To get a better idea of how our model is going to perform on new data, we should really look at the testing set.
+
+```{r Hitters_test_preds}
+hitters_test_preds <- hitters_tree %>% 
+  predict( new_data = hitters_test ) %>% 
+  bind_cols( hitters_test ) 
+hitters_test_preds%>% 
+  metrics( truth = Salary, estimate = .pred)
+```
+See how drastically the metrics have changed? RMSE has grown to $409 and the R2 has dropped to 0.231; both of which are quite bad!
+
+This highlights two things:
+
+1. Why it is a good idea to test the model on test data, as it will always be optimistic on the training data.
+1. This is a real problem with regression trees (and decision trees in general): the predictive power of regression trees is not great.
+
+Number 2 poses a real problem for us in the grand scheme of things. Why even have a model if it is no good at predicting?
+
+One reason is that it is very easy to conceptualise, which is always nice. Another is that it provides a nice strong foundation to build upon; something we will come back to when we look at Random Forests.
+
+# Regression Trees Exercise
+
+Consider the Boston dataset from the MASS package. We can load this with:
+
+```{r Boston_data}
+data(Boston, package = "MASS")
+Boston <- Boston %>% 
+  as_tibble()
+```
+
+?Boston
+
+This dataset contains 506 observations on the housing value in the suburbs of Boston. Information about each of the variables can be found in the help file. We are going to build and tune a regression tree to predict the median value (in $1000’s) of owner-occupied homes. Before we begin, let’s set a seed for reproducibility:
+
+
+```{r Boston_seed}
+set.seed( 1234 )
+```
+
+## Skim the data. How many variables are there in the data? Could any of them be treated as a categorical variable?
+
+```{r Boston_skim}
+skim(Boston)
+```
+
+There are 14 variables in the data: the outcome variable medv, and 13 predictors. The variable chas should be a categorical predictor.
+
+
+## Convert the variable chas to a factor. This variable is a 1 if the suburb is on the Charles River, and 0 otherwise. Get a boxplot of medv for each of level of chas. Does there seem to be a difference in house prices for suburbs on the river versus suburbs not on the river?
+
+```{r Boston_chas_medv}
+Boston <- Boston %>% 
+  mutate( chas = as.factor( chas ) ) 
+Boston %>% 
+  ggplot( aes( x = chas, y = medv ) ) +
+  geom_boxplot() +
+  theme_minimal()
+```
+The median house price looks to be higher for the suburbs on the river.
+
+## Produce a scatterplot with rm on the x-axis and medv on the y-axis. rm is the average number of rooms per dwelling in the suburb. Describe the relationship between these variables.
+
+```{r Boston_rm_medv}
+Boston %>% 
+  ggplot( aes( x = rm, y = medv ) ) +
+  geom_point() +
+  theme_minimal()
+```
+There seems to be a fairly strong, positive, linear relationship between rm and medv. This indicates that the more rooms a house has on average, the higher the price. This definitely passes the idiot test, i.e. this is exactly what we would expect to happen.
+
+
+## Split the data into a testing and a training set. Also, create a 5-fold cross validation set of the training data
+
+```{r Boston_test_train}
+boston_split <- initial_split( Boston )
+boston_train <- training( boston_split )
+boston_test <- testing( boston_split )
+```
+
+## Make a model specification for a regression tree. For now, do not worry about the hyperparameters
+
+```{r Boston_rtree}
+reg_tree_spec <- decision_tree( mode = "regression" ) %>% 
+  set_engine( "rpart" )
+```
+
+## Fit the regression tree on the training data and get a tree diagram for this fit.
+
+```{r Boston_fit}
+boston_tree <- reg_tree_spec %>% 
+  fit( medv ~ ., data = boston_train )
+plot( boston_tree$fit )
+text( boston_tree$fit )
+```
+
+## Using the vip function, what is the most important variable and what is the least important variable?
+
+```{r Boston_vip}
+boston_tree %>% 
+  vip( num_features = 12 ) + 
+  theme_minimal()
+```
+The most important variable is rm and the least important id rad. Use ?Boston to see if you think this seems reasonable based on the descriptions of these variables.
+
+## What is the value of the most important variable?
+
+```{r Boston_vi}
+boston_tree %>% 
+  vi()
+```
+
+The most important variable is rm and it has a value of 18,353.\
+
+## Get predictions on the test data. With these predictions, use metrics to find the estimate of the R^2. 
+
+```{r Boston_preds}
+boston_test_preds <- boston_tree %>% 
+  predict( new_data = boston_test ) %>% 
+  bind_cols( boston_test ) 
+boston_test_preds%>% 
+  metrics( truth = medv, estimate = .pred)
+```
+
+The value of  R2  is 0.714.
+
+
+

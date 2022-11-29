@@ -1,0 +1,1011 @@
+---
+title: "Week 10 Trees and Forests"
+author: "Huining H"
+date: "14/10/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(knitr,dplyr)
+pacman::p_load(tidyverse, inspectdf,tidyr,stringr, stringi)
+pacman::p_load(caret,modelr)
+pacman::p_load(mlbench,mplot)
+pacman::p_load(tidymodels,glmx)
+pacman::p_load(skimr,vip,yardstick,ranger,kknn)
+```
+
+
+
+# Classification Trees — Example — Skim the Data
+
+
+```{r heart_data}
+heart  <- read_csv( "Heart.csv" ) # Loads the dataset for us
+heart  <- heart %>%  
+  select( -...1 ) %>% # The first column is useless
+  mutate_if( is_character, factor ) # Changes character variables to factors
+heart 
+```
+
+
+This dataset contains 14 variables measured on 303 patients pertaining to patients who presented with heart issues. The outcome variable AHD has a value of ‘Yes’ that indicates the presence of heart disease based on an angiography test, while ‘No’ means no heart disease. There are 13 predictors including Age, Sex, Chol (a cholesterol measurement), and other heart and lung function measurements.
+
+```{r heart_skim}
+heart %>% 
+  skim()
+```
+
+the variable Sex has been recognised as a numeric, not a factor. Also, there is some missing data
+ 
+```{r heart_tidy}
+heart <- heart %>% 
+  mutate( Sex = as.factor( Sex ) ) %>% 
+  drop_na()
+```
+
+
+# Classification Trees — Example — Building it Out
+
+we want to build a classification tree to see whether we can predict if a patient will have heart disease or not based on their symptoms. Let’s start with a model specification
+
+```{r heart_class_tree_spec}
+class_tree_spec <- decision_tree( mode = "classification" ) %>% 
+  set_engine( "rpart" )
+```
+
+create a testing and training split.
+```{r heart_test_train_split}
+set.seed( 1210 ) # Let's not forget that seed
+# Let's make sure we have even proportions of AHD = Yes and AHD = No with the use of strata.
+heart_split <- initial_split( heart, strata = AHD ) 
+heart_train <- training( heart_split )
+heart_test <- testing( heart_split )
+```
+
+For good measure, let’s also create a cross-validation set of the training data. We will make 5 folds.
+
+```{r heart_cross_validation}
+set.seed( 1012 )
+heart_cv <- vfold_cv( heart_train, v = 5, strata = AHD )
+```
+
+fit this classification tree on the training data
+```{r heart_tree_fit}
+heart_tree <- class_tree_spec %>% 
+  fit( AHD ~ . , data = heart_train ) 
+heart_tree
+
+```
+
+graphically
+
+```{r heart_tree_graph}
+plot( heart_tree$fit )
+text( heart_tree$fit, pretty = 0 )
+```
+
+
+# Classification Trees — Example — Predicting
+
+
+```{r heart_resample}
+ht_wf <- workflow() %>%
+  add_model(class_tree_spec) %>% 
+  add_formula(AHD ~ .)
+
+heart_resamples <- fit_resamples( ht_wf, 
+                        resamples = heart_cv)
+```
+
+What variables are important in the prediction of heart disease in this dataset? Let’s have a look at the trusty VIP plot.
+
+```{r heart_vip}
+heart_tree %>% 
+  vip( num_features = 10 ) + # Only 10 predictors are considered important
+  theme_minimal()
+```
+
+ For a regression tree, a variable’s importance was measured by the variable’s total contribution to the reduction of RSS, and it is something similar for classification trees. Here, variable importance is computed using the mean decrease in the Gini index caused by each variable.
+
+let’s finish this off with some final evaluation of our model on the test set. How well is our model actually doing on new data?
+
+How do we assess how well a classification model is doing?
+
+With the accuracy and ROC curve 
+
+To do this, let’s get some predictions on the test data.
+
+```{r heart_predictions}
+heart_preds <- heart_tree %>% 
+  predict( new_data = heart_test, type = "class" ) %>% # We get class predictions
+  bind_cols( heart_test %>% 
+               select( AHD ) ) # We add the truth
+heart_preds
+```
+
+quantify this a bit more; first, with a confusion matrix:
+
+```{r heart_predictions_confusion_matrix}
+heart_preds %>% 
+  conf_mat( truth = AHD, estimate = .pred_class)
+```
+
+So far, so good! Let’s look at the specificity, the sensitivity and the accuracy. To do this, we are going to use the specified functions in yardstick.
+
+
+```{r heart_predictions_spec_sens_acc}
+# This gets our metrics and puts them into one nice tibble.
+sensitivity( heart_preds, truth = AHD, estimate = .pred_class ) %>% 
+  bind_rows( specificity( heart_preds, truth = AHD, estimate = .pred_class ), 
+             accuracy( heart_preds, truth = AHD, estimate = .pred_class ) )
+```
+
+So, the model is predicting true cases quite well (sensitivity), and doing a solid job all round according to the accuracy. Let’s finish off with a nice, graphical representation of this—the ROC curve. Remember, we need our class probabilities to do this
+
+
+```{r heart_predictions_bind}
+heart_preds <- heart_preds %>% 
+  bind_cols( predict( heart_tree, 
+                      new_data = heart_test, 
+                      type = "prob" ) )
+heart_preds
+```
+
+```{r heart_predictions_ROC}
+heart_preds %>% 
+  roc_curve( truth = AHD, estimate = .pred_No ) %>% 
+  autoplot()
+```
+
+# Classification Trees — Criteria
+
+https://myuni.adelaide.edu.au/courses/67016/pages/week-10-classification-trees-criteria?module_item_id=2284965
+
+
+# Classification Trees Exercise
+
+For this exercise, you are going to look at the Pima data from the MASS package. This is data from a population of Pima Native American women, at least 21 years old, living near Phoenix, Arizona. They were tested for diabetes according to the World Health Organization criteria by the US National Institute of Diabetes and Digestive and Kidney Diseases.
+
+
+Load the data with the following code. Note that we have loaded and combined two datasets. This is because it has already been split into a testing and training set, but we want to make our own.
+
+```{r pima_data}
+data( Pima.te, package = "MASS")
+data( Pima.tr, package = "MASS")
+pima <- bind_rows( Pima.te, Pima.tr ) %>% 
+  as_tibble()
+```
+
+We are interested in predicting whether someone will have diabetes, given the other information in the data, so the outcome variable will be the type variable. Before going further, let’s set a seed for reproducibility.
+```{r pima_seed}
+set.seed( 999 )
+```
+
+
+1. Skim the data. How many variables are there? What are they? (More information can be found in the help file.) For each variable, give the possible values if it is a categorical variable, or the mean value if it is numeric.
+
+```{r pima_skim}
+skim( pima )
+```
+
+
+There are eight variables. They are:
+
+type : Our response variable, which can take the values Yes or No
+npreg : The number of pregnancies, mean 3.52
+glu : plasma glucose concentration, mean 121
+bp : diastolic blood pressure, mean 71.5
+skin : skin fold thickness in mm, mean 29.2
+bmi : body mass index, mean 32.9
+ped : diabetes pedigree function, mean 0.503
+age : age in years, mean 31.6
+
+2. Diabetes has to do with blood sugar levels due to lack of insulin production in the body. Let’s see if you can observe a difference in glucose levels between those with diabetes and those without diabetes. Do you expect people with diabetes to have a higher glucose level? Get box plots of glu for each type to see if this agrees with your thought.
+
+```{r pima_box}
+pima %>% 
+  ggplot( aes( x = type, y = glu)) +
+  geom_boxplot() +
+  theme_minimal()
+```
+
+Figure 4.14: Side-by-side box plots of glucose for diabetics compared to non-diabetics.
+
+You would expect people with diabetes to have a higher level of blood glucose. This is what can be observed in the box plots.
+
+3. Split the Pima data into a testing and training set. Also make a 5-fold cross validation set for the training set.
+
+```{r pima_split}
+pima_split <- initial_split( pima )
+pima_train <- training( pima_split )
+pima_test <- testing( pima_split )
+pima_cv <- vfold_cv( pima_train, v = 5 )
+```
+
+5. Make a classification tree model specification. For now, don’t worry about any hyperparameters.
+
+```{r pima_tree}
+class_tree_spec <- decision_tree( mode = "classification" ) %>% 
+  set_engine( "rpart" )
+```
+
+6. Fit a classification tree to the Pima training data. Get a tree diagram of the classification tree.
+
+```{r pima_tree_train}
+pima_tree <- class_tree_spec %>% 
+  fit( type ~ . , data = pima_train)
+plot( pima_tree$fit )
+text( pima_tree$fit )
+```
+Figure 4.15: Tree diagram for Pima dataset
+
+6. Based on your classification tree, if a 30-year-old female Pima patient presented with a glucose level of 120, a BMI of 28, a pedigree score of 0.5 and a blood pressure of 68, would you classify them as having diabetes or not having diabetes?
+
+glu < 144.5, so we take the left branch
+age > 28.5, so we take the right branch
+glu > 103.5, so we take the right branch
+bmi > 26.35, so we take the right branch
+ped < 0.52, so we take the left branch
+bp < 71, so we take the right branch
+Because of this, you would predict she will have diabetes.
+
+
+
+7. Obtain a vip plot for this model. What is the most important variable in classifying diabetes?
+
+
+```{r pima_vip}
+pima_tree %>% 
+  vip()
+```
+Figure 4.16: VIP plot for Pima dataset
+
+By a long shot, glu is the most important variable.
+
+
+8. Make a model specification so that you can tune cost_complexity
+
+```{r pima_tune}
+class_tree_tune <- decision_tree( mode = "classification", cost_complexity = tune()) %>% 
+  set_engine( "rpart" )
+```
+
+
+9. Make a grid of 20 parameter values for cost_complexity.
+
+```{r pima_grid}
+cost_grid <- grid_regular( cost_complexity(),
+                           levels = 20 )
+cost_grid
+```
+
+10. Train the cost complexity using the cross-validation set. This will take a moment.
+
+```{r pima_train_cross_validation}
+doParallel::registerDoParallel() # This just makes a Mac work faster.
+
+pima_wf <- workflow() %>%
+  add_model(class_tree_tune) %>% 
+  add_formula(type ~ .)
+
+tree_tune <- tune_grid( pima_wf, 
+                        resamples = pima_cv,
+                        grid = cost_grid )
+```
+
+
+11. Fit the model with the best roc_auc using finalize_model. Get a tree diagram of this model
+
+```{r pima_best_model}
+best_auc <- select_best( tree_tune, "roc_auc")
+final_spec <- finalize_model( class_tree_tune, best_auc )
+final_tree <- final_spec %>% 
+  fit( type ~ . , data = pima_train )
+plot( final_tree$fit )
+text( final_tree$fit )
+```
+Figure 4.17: Tree diagram for Pima dataset
+
+12. Get a vip plot for the final model. What is the most important variable?
+
+```{r pima_final_tree}
+final_tree %>% 
+  vip()
+```
+Figure 4.18: VIP plot for Pima dataset
+
+glu is still the most important variable by a long shot.
+
+
+13. Compare the ROC curves for the tuned classification tree and the untuned regression tree when predicting on the testing data. Remember that you need to:
+get class probability predictions
+get the true value
+use roc_curve and autoplot to plot the ROC curve.
+
+
+
+```{r pima_predic_ture_roc}
+pima_preds <- predict( final_tree, # Get probability predictions for final model
+                       new_data = pima_test,
+                       type = "prob" ) %>% 
+  bind_cols( pima_test %>% # Add on the truth.
+               select( type ) %>% 
+               mutate( model = "Tuned" ) ) %>% # Add a variable to track the model
+  bind_rows( # Bind on the predictions from the orginal tree
+    predict( pima_tree, # Get probability predictions
+             new_data = pima_test,
+             type = "prob" ) %>% 
+      bind_cols( pima_test %>%  # Add truth and model tacker
+                   select( type ) %>% 
+                   mutate( model = "Untuned" ) )
+  )
+pima_preds %>% 
+  group_by( model ) %>% # Seperate by model type.
+  roc_curve( truth = type, estimate = .pred_Yes)%>%
+  
+  autoplot
+
+```
+
+4.19: ROC curve for Pima dataset
+
+Looking at the ROC curves, it appears the tuned model is doing marginally better in predictions.
+
+# Random Forests — A Comparative Example
+
+A real problem with regression trees (and decision trees in general) is that the predictive power is not great.
+
+This is a real problem for a machine-learning method, since the ultimate goal for any machine-learning technique is prediction.
+
+A random forest is an extension of the basic decision tree that aims to alleviate this problem of predictive power by reducing the variance inherent in tree-based methods.
+
+We already have our Hitters data split into a testing and training set.  we will  organise some cross-validation sets. Let’s get 10 folds for good measure.
+
+```{r hitters_data}
+data( "Hitters", package = "ISLR" )
+Hitters <- Hitters %>% 
+  tibble() %>% 
+  drop_na()
+
+set.seed( 1223 ) # Don't want to forget our seed
+hitters_split <- initial_split( Hitters ) # Create our split object
+hitters_train <- training( hitters_split ) # Get our testing and training sets
+hitters_test <- testing( hitters_split )
+```
+
+
+```{r hitters_seed}
+set.seed( 1234 )
+hitters_cv <- vfold_cv( hitters_train, v = 10 )
+```
+
+
+Now that is out of the way, let’s look at building a random forest. The function for this is rand_forest and this takes three possible hyperparameters:
+
+1. trees — This is the number of trees we want to consider.
+1. mtry — This defines how many predictors we wish to consider at each split.
+1. min_n — This gives us a stopping criterion.
+
+I will get into these hyperparameters in more detail in the following sections—for now, let’s set trees = 1000, mtry = 5, and use the default min_n.
+
+```{r hitters_rf}
+h_rf_spec <- rand_forest( mode = "regression", trees = 1000, mtry = 5 ) %>% 
+  set_engine( "ranger" )
+```
+
+So we are building a random forest for regression, with 1000 trees and sampling 5 predictors at each split (once again, this will make more sense later). A small note before doing this—random forest incorporates an element of randomness in them when they are fit, so it is a good idea to set a seed so that the output is reproducible.
+
+```{r hitters_rf_spec}
+set.seed( 2345 )
+hitters_rf <- h_rf_spec %>% 
+  fit( Salary ~ ., data = hitters_train )
+hitters_rf
+```
+
+
+This looks nothing like the output you would get for a decision tree! This nicely highlights a drawback of random forests: they lose the easy interpretability of decision trees, as well as the handy graphical representation.
+
+This is obviously an undesirable aspect if you wish to understand and explain what is going on, but random forests improve your predictive power, which is the ultimate goal.
+
+Let’s have a look at what I mean about this improvement in prediction with some cross-validation. Let’s get our cross-validated estimates for both the decision tree and the random forest to see how they compare. First, we have the regression tree.
+
+```{r hitters_dt_cv}
+h_reg_tree_spec <- decision_tree( mode = "regression" ) %>% 
+  set_engine( "rpart" )
+
+hitter_wf <- workflow() %>%
+  add_model(h_reg_tree_spec) %>% 
+  add_formula(Salary ~ .)
+
+h_dt_cv <- fit_resamples(hitter_wf,
+                         resamples = hitters_cv )
+h_dt_cv %>% 
+  collect_metrics()
+```
+
+There is a cross-validated RMSE of $317.528 for the regression tree.
+
+What happens when we look at a random forest?
+
+```{r hitters_rf_resample}
+set.seed( 1010 ) # Remember that we should set seeds with random forests.
+
+hitter_wf2 <- workflow() %>%
+  add_model(h_rf_spec) %>% 
+  add_formula(Salary ~ .)
+
+rf_cv <- fit_resamples( hitter_wf2,
+                        resamples = hitters_cv )
+rf_cv %>% 
+  collect_metrics()
+```
+
+The RMSE has dropped to $283.937. That’s about a $40 reduction in RMSE, which is a great improvement. Let’s look at this a little deeper. What we can do is compare how these models are doing on each fold of our cross validation, which is plotted below.
+
+```{r tree_pic, echo=FALSE, out.width="20%", fig.align='center'}
+ include_graphics("DATA_7302OL_Regression tree versus random forest on cross-validation folds.png")
+```
+Figure 4.23: Regression tree versus random forest on cross-validation folds
+
+What you can see here is that the random forest is predicting more accurately on almost all of the folds (all of the red points are lower than the blue points).
+
+This shows that our random forest model is much better than our regression tree model for this data. Let’s see how it performs on the test data.
+
+```{r hitter_preds}
+hitters_preds <- hitters_rf %>% 
+  predict( new_data = hitters_test ) %>% 
+  bind_cols( hitters_test %>% 
+               select( Salary ) ) # Add on the truth
+hitters_preds
+```
+
+```{r hitter_preds_matrics}
+hitters_preds %>% 
+  metrics( truth = Salary, estimate = .pred )
+```
+```{r tree_cimpare, echo=FALSE, out.width="20%", fig.align='center'}
+ include_graphics("DATA_7302OL_Prediction comparisons of random forests and regression trees.png")
+```
+
+What we have is a scatterplot for each model of the predicted values versus the true salary for the test data. You can see from this that the random forest has given much more narrow predictions (which you would expect from the reduced RMSE). The random forest model also doesn’t have the same kind of blocky look that the regression tree has.
+
+Recall that, for a regression tree, we simply assign a point the mean value from a particular region as its prediction. The random forest is being a bit fancier than this, and that explains the much more scattered look in the plot. 
+
+# Random Forest — The Theory
+
+https://myuni.adelaide.edu.au/courses/67016/pages/week-10-random-forest-the-theory?module_item_id=2284971
+
+
+# Random Forest — What Is so Important here?
+
+get a VIP plot from a random forest model. Let’s try our usual job of just using the vip function on our random forest from the Hitters data.
+
+hitters_rf %>% 
+  vip()
+## Error in importance.ranger(object): No variable importance found. Please use 'importance' option when growing the forest.
+
+Notice here how we get an error. That is because when you define the random forest specification, you need to tell it you want to keep an idea of the variable importance measure. This is done with the importance parameter in the set_engine function and is specific to a random forest model.
+
+The parameter importance is an engine-specific argument we can give that will tell our random forest how we want to compute the variable importance.
+
+For us, a random forest specification should look something like this:
+
+```{r hitter_rf_spec}
+rf_spec1 <- rand_forest( mode = "regression", trees = 1000, mtry = 5 ) %>% 
+  set_engine( "ranger", importance = "permutation" )
+```
+
+We now have to refit our model with:
+
+```{r hitter_rf_2}
+set.seed( 2345 ) # We have used the same seed from before so we have the same tree
+hitters_rf2 <- rf_spec1 %>% 
+  fit( Salary ~ ., data = hitters_train )
+hitters_rf2
+```
+
+This looks the exact same as before, but let’s try that vip function now:
+
+```{r hitter_rf2_vip}
+hitters_rf2 %>% 
+  vip( num_features = 19 ) + # There are 19 predictors in this model
+  theme_minimal()
+```
+
+Figure 4.25: Variable importance plot for a random forest
+
+# Random Forest — Variable Importance from OOB Estimates
+
+Let’s consider just one tree again, and we can look at the OOB prediction error for this tree. That is, what does our RSS or Gini index look like when we predict the unused data points on our tree?
+
+We can then pick a single variable, shuffle up the values so they no longer correspond to the correct subject, and then re-predict for the data points. Once we have the new OOB prediction error, we can then compare it to the original one to see how much it changed. This gives a measure of how important that variable is; that is, how much does it reduce our prediction error when it is assigned correctly?
+
+We can then average this change in prediction accuracy over all the trees we make to get an idea of how important the variable is overall.
+
+Let’s consider the hitters random forest example. Suppose that this sample of 10 are the data points that are not included in our bootstrap—they will make up our OOB error.
+
+```{r hitter_OOB}
+set.seed( 955 )
+h_oob_sample <- sample( 1:198, 10 ) # sample the possible datapoints
+h_oob_data <- hitters_train %>% 
+  slice( h_oob_sample )
+h_oob_data
+```
+
+We can get a prediction for this data with:
+
+
+```{r hitter_OOB_pred}
+h_oob_preds <- predict( hitters_rf,
+                      new_data = h_oob_data ) %>% 
+  bind_cols( h_oob_data %>% select( Salary ) ) # Let's add on the true value.
+h_oob_preds
+```
+
+We can then get an estimate of our RSS with:
+
+```{r hitter_OOB_est}
+h_oob_preds %>% 
+  summarise( RSS = sum( ( Salary - .pred )^2 ) )
+```
+
+
+Now let’s shuffle a variable, say, the AtBat variable.
+
+```{r hitter_OOB_shuffle}
+set.seed( 1256 )
+atbat_shuffle <- h_oob_data %>% 
+  mutate( AtBat = sample( AtBat ) )
+atbat_shuffle
+```
+
+Notice how the AtBat variable has been all shuffled about, but everything else is the same? Now when we predict, this will tell us just how important the variable AtBat is to our prediction accuracy.
+
+```{r hitter_OOB_shuffle_pred}
+atbat_preds <- predict( hitters_rf,
+                        new_data = atbat_shuffle ) %>% 
+  bind_cols( atbat_shuffle %>% 
+               select( Salary ) ) # gotta love that true value
+atbat_preds
+```
+
+So now let’s compare the difference in RSS between these predictions.
+
+
+```{r hitter_OOB_shuffle_pred}
+h_oob_preds %>% 
+  mutate( type = "original" ) %>%  # Let's keep track of what's what
+  bind_rows( atbat_preds %>% 
+               mutate( type = "shuffle" ) ) %>% 
+  group_by( type ) %>% 
+  summarise( RSS = sum( ( Salary - .pred )^2 ) )
+```
+
+You can see that shuffling AtBat caused a whopping 79070.3 increase in RSS, so it is quite important!
+
+This is the idea behind variable importance for random forests. We do this for each variable on each tree that we build using our OOB data. We then average these values across all trees to get a feel for just how important the variable is overall for our model. We can summarise this as follows:
+
+1. For the bth tree, the OOB samples are predicted and the accuracy measured.
+1. The jth variable values for the OOB samples are permuted, and the accuracy is again calculated.
+1. The decrease in accuracy is averaged over all the trees and this is used as a variable importance measure for the jth variable.
+
+What is the takeaway message from this? Besides a nice appreciation for the lovely maths going on here, what you must remember when fitting random forests is that you need to include the importance = "permutation" command in your model specification; that is, your model specification should always look like:
+
+
+ ```{r model_specification}
+rf_spec <- 
+  rand_forest( mode = "mode you want", 
+                        trees = "how many trees" , 
+                        mtry = "How many predictors to consider at each split",
+                        min_n = "How small do you want the nodes" ) %>% 
+  set_engine( "ranger", importance = "permutation" )
+ ```
+
+# Exercise — Random Forest
+
+to fit a random forest to this data to see how it compares to the classification tree we fitted previously.
+
+First things first, let’s set a seed:
+
+```{r rf_seed}
+set.seed( 1357 )
+```
+
+1. Split the data into a testing and training set. Make a 5-fold cross-validation set.
+
+```{r pima_split2}
+pima_split <- initial_split( pima )
+pima_train <- training( pima_split )
+pima_test <- testing( pima_split )
+pima_cv <- vfold_cv( pima_train, v = 5 )
+```
+
+1. Make a random forest model specification. You need this specification to:
+ fit a classification model using 1000 trees
+ specify that you want to tune mtry and min_n
+ ensure that you get a variable importance measure.
+
+```{r pima_random_forest_model_specification}
+p_rf_spec_tune <- rand_forest( mode = "classification",
+                        trees = 1000, 
+                        mtry = tune(),
+                        min_n = tune() ) %>% 
+  set_engine( "ranger", importance = "permutation" )
+p_rf_spec_tune
+```
+
+1. Make a grid of tuning parameters to try for this model. You are trying to tune mtry. If you look at the help file, you will see that the 'default' for mtry() contains unknowns. You can either input this manually, or use the finalize function to automatically fill this unknown. Make a regular grid of tuning parameters for mtry and min_n with 5 levels, using the default for min_n and finalize( mtry(), pima_train %>% select( -type ) ) for mtry.
+
+```{r pima_grid}
+p_params_grid <- grid_regular( finalize( mtry(), pima_train %>% select( -type ) ),
+                             min_n(),
+                             levels = 5)
+p_params_grid
+```
+
+1. Tune your random forest model on the cross-validation sets using the parameter grid you made in Question 3. This might take a minute.
+
+```{r pima_tune}
+
+p_wf <- workflow() %>%
+  add_model(p_rf_spec_tune) %>% 
+  add_formula(formula = type ~ .)
+
+p_rf_tuned <- tune_grid(p_wf,
+                        resamples = pima_cv,
+                        grid = p_params_grid )
+```
+
+Note: Due to the randomisation involved in both tuning and random forests, your answers from rf_tuned will be different to mine. 
+
+1. Finalise your model using the results for the best roc_auc. Fit this model to your data.
+
+```{r pima_Finalise_auc}
+
+p_best_auc <- select_best( p_rf_tuned, "roc_auc" )
+p_final_rf <- finalize_model( p_rf_spec_tune, p_best_auc )
+pima_rf <- p_final_rf %>% 
+  fit( type ~ . , data = pima_train )
+```
+
+
+1. Obtain a vip plot for this random forest model. What is the most important predictor for whether a Pima Native American woman has diabetes?
+
+```{r pima__rf_vip}
+pima_rf %>% 
+  vip() +
+  theme_minimal()
+```
+4.26: VIP plot for the Pima dataset
+
+glu is the most important predictor according to this model.
+
+
+1.  Obtain the predicted accuracy for the random forest model on the test data. Do you prefer the random forest, or the classification tree, based on the accuracy?
+
+```{r pima_pre_acc}
+p1_rf_preds <- predict( pima_rf, # Get class prediction
+                     new_data = pima_test,
+                     type = "class" ) %>% 
+  bind_cols( pima_test %>% #add on the true value
+               select( type ) )
+p1_rf_preds %>% 
+  metrics( truth = type, estimate = .pred_class )
+```
+
+The RF accuracy is 0.7669 compared to 0.6882 for the classification tree. The preference is the random forest.
+
+
+1. The roc_auc of the tuned classification tree built on these data was also in Week 4: Classification Trees Exercise. Obtain the predicted roc_aucfor the random forest model on the test data. Do you prefer the random forest, or the classification tree, based on the AUC?
+
+```{r pima_pre_AUC}
+p2_rf_preds <- p1_rf_preds %>% 
+  bind_cols( predict( pima_rf, # Add the probabilities to our predictions
+                      new_data = pima_test,
+                      type = "prob" ) )
+p2_rf_preds %>% 
+  roc_auc( truth = type,  .pred_Yes)
+```
+The RF AUC is 0.8469 compared to 0.7475 for the classification tree. The preference is the random forest.
+
+
+1. Obtain a ROC curve for your random forest
+
+```{r pima_rf_ROC}
+p2_rf_preds %>% 
+  roc_curve( truth = type,  estimate = .pred_Yes) %>% 
+  
+  autoplot()
+```
+
+4.27: ROC curve for the random forest model applied to the Pima dataset.
+
+1. Nearest Neighbours
+
+the  (Links to an external site.)iris dataset. The data consists of 50 flowers from each of three species of iris. We have measurement on various parts of the flowers.
+
+First, you need to load it. You will need to load the MASS package to get it:
+
+```{r iris_data}
+library(MASS)
+data("iris")
+iris <- as_tibble(iris)
+iris
+```
+
+
+You are going to build a model to predict the species type, based on sepal length and sepal width. But first, let's plot of sepal width vs. sepal length:
+
+
+```{r iris_plot}
+iris %>% 
+ ggplot( aes( x = Sepal.Length, y = Sepal.Width, colour = Species) ) + geom_point() 
+```
+Figure 2.27: Scatterplot of sepal width vs. sepal length, coloured by species, from the Iris dataset.
+
+
+The model you need is nearest_neighbours
+
+
+```{r iris_nearest_neighbours_5}
+i_near_neighbour_spec <- nearest_neighbor( mode = "classification", neighbors = 5 )
+i_near_neighbour_spec 
+```
+
+
+to set the engine. We will use the default engine kknn. For other options, feel free to suss out help('nearest_neighbours').
+```{r iris_nn_engine}
+iris_knn <- i_near_neighbour_spec %>% 
+ set_engine("kknn")
+iris_knn 
+```
+
+
+the third and final step is to fit the model. That is, you are going to fit Species ~ Sepal.Length + Sepal.Width.
+
+
+install.packages("igraph", type = "binary")
+install.packages("kknn")
+
+```{r iris_nn_model}
+library(igraph,kknn)
+iris_knn <- i_near_neighbour_spec %>% 
+ set_engine("kknn") %>% 
+ fit( Species ~ Sepal.Length + Sepal.Width, data = iris )
+iris_knn
+```
+
+You can do a few things. You can get class predictions and estimated probabilities. You can get confusion matrices and ROC curves and AUC. But the thing you are going to do is look at some decision boundaries. Decision boundaries can be calculated so you can see where various points would be classified.
+
+The first thing you need is that grid of values to predict over:
+
+```{r iris_sepal_grid}
+sepal.grid <- expand.grid( 
+ Sepal.Length = seq( 4, 8, length = 100 ), 
+ Sepal.Width = seq( 2, 4.5, length = 100 )
+) %>% as_tibble()
+sepal.grid
+```
+
+Now, you want some class predictions and you want to tack them onto this new tibble. Do this with predict and bind_cols.
+
+```{r iris_sepal_grid_pred}
+sepal.grid <- sepal.grid %>% 
+ bind_cols(
+  predict( iris_knn, new_data = sepal.grid, type = "class" )
+ ) %>% 
+ rename( Species = .pred_class) #This simply changes the name of our prediction variable
+sepal.grid
+```
+
+Finally, you can visualise this in a nice plot
+
+```{r iris_sepal_plot}
+ggplot( sepal.grid, aes( x = Sepal.Length, y = Sepal.Width, fill = Species ) ) + 
+ geom_tile( alpha = 0.2 ) + 
+ geom_point( data = iris, aes( col = Species, fill = NA ) )
+```
+
+Figure 2.28: Decision boundaries for a 5-nearest neighbours model on the Iris dataset.
+
+
+What is the best value for k?
+
+There is no single best value for every problem. The value k is what is known as a hyperparameter, and all this means is that you cannot estimate its value from the data. What you have to do is things like cross-validation. You try a bunch of different values of k, and simply use the value that gives you the best predictive power (as determined by the cross-validated accuracy or AUC).
+
+As to what happens when we choose different k, it is best to show you.
+
+ ```{r iris_sepal_best_k}
+k <- c(1, 5, 10, 50, 100)
+for ( i in 1:length( k ) ){
+ sepal.grid1 <- sepal.grid %>% select( Sepal.Length, Sepal.Width)
+ 
+ iris_knn <- nearest_neighbor( mode = "classification", neighbors = k[i] ) %>% 
+  set_engine( "kknn" ) %>% 
+  fit( Species ~ Sepal.Length + Sepal.Width, data = iris )
+ 
+ sepal.grid2 <- sepal.grid1 %>% 
+  bind_cols(
+   predict( iris_knn, new_data = sepal.grid, type = "class" )
+  ) %>% 
+  rename( Species = .pred_class)
+ 
+ bound_plot <- ggplot( sepal.grid, aes( x = Sepal.Length, y = Sepal.Width, fill = Species ) ) + 
+  geom_tile( alpha = 0.2 ) + 
+  geom_point( data = iris, aes( col = Species, fill = NA ) ) +
+  ggtitle( paste( k[i],"-nearest neighbours" ) )
+ 
+ print(bound_plot)
+}
+ ```
+
+As k increases, the decision boundaries get smoother and smoother. But do heed a warning here; the larger k gets, the longer it takes to fit the model.
+
+1. How Near Is My Neighbour? Exercise
+
+the mpg data from the ggplot2 package
+
+manufacturer : The manufacturer of the car, i.e. Audi, Toyota, etc.
+cty : The miles per gallon of the car when driving in the city.
+displ : The engine displacement in litres.
+
+You are going to try to classify the manufacturer of the car based on the displ and cty values. One immediate headache here is seen below:
+
+```{r mpg_data_manufacturer}
+data(mpg)
+mpg %>% 
+ count(manufacturer) 
+```
+
+reducing these into four categories. You are going to look at Audis, Toyotas, Dodges and everything else.
+
+
+```{r mpg_r4}
+mpg_new <- mpg %>%
+ mutate(
+  manufacturer = ifelse( 
+   manufacturer == "dodge" , 
+   "dodge", 
+   ifelse( 
+    manufacturer == "toyota", 
+    "toyota",
+    ifelse(
+     manufacturer == "audi", 
+     "audi",
+     "other"
+    )
+   )
+  )
+ ) %>% 
+ mutate_if( is.character, as.factor ) #Changes all character variables to factors.
+mpg_new %>%
+ count( manufacturer )
+```
+
+1. Get a scatterplot of displ vs. cty coloured by manufacturer in the mpg_new dataset
+
+```{r mpg_new_plot}
+ mpg_new %>% 
+ ggplot( aes( x = cty, y = displ, colour = manufacturer ) ) + 
+ geom_point() +
+theme_minimal()
+```
+2.34: Scatterplot of displacement agaisnt fuel efficiency.
+
+
+1. Make a model specification for a 10-nearest neighbours model.
+
+```{r mpg_new_specification}
+ kknn_spec <- nearest_neighbor( mode = "classification", neighbors = 10 ) %>% 
+ set_engine( "kknn" )
+```
+
+
+1. Fit a 10-nearest neighbours model of manufacturer on cty and displ from the mpg_new dataset
+
+```{r mpg_new_fit}
+ mpg_knn <- kknn_spec %>% 
+ fit( manufacturer ~ cty + displ, data = mpg_new )
+mpg_knn
+```
+
+1. Create a grid of displ and cty values. We want the displ values to range from 0.5 to 7.5 and the cty values to range from 5 to 36. Lengths of 200 will suffice.
+
+```{r mpg_new_grid}
+ mpg_grid <- expand.grid( 
+ displ = seq( 0.5, 7.5, length = 200 ), 
+ cty = seq( 5, 36, length = 200 )
+)
+```
+
+
+1. Get predictions from the nearest neighbours model for the grid data. Attach these classifications to the grid data and rename the predictions to manufacturer.
+
+```{r mpg_new_grid}
+ mpg_grid <- mpg_grid %>% 
+ bind_cols(
+  predict( mpg_knn, mpg_grid, type = "class" )
+ ) %>% 
+ rename(
+  manufacturer = .pred_class
+ )
+mpg_grid
+```
+
+Note: Only the first 100 of 10,000 rows are shown in this output.
+
+1. Get a scatterplot of displ vs. cty with decision boundaries for classification from your 10-nearest neighbours model.
+
+
+```{r mpg_new_scatterplot}
+ mpg_grid %>% 
+ ggplot( aes( x = cty, y = displ, fill = manufacturer ) ) +
+ geom_tile( alpha = 0.2 ) +
+ geom_point( data = mpg_new, aes( colour = manufacturer ) ) +
+ theme_minimal()
+```
+2.35: Scatterplot of displacement against fuel efficiency for mpg dataset.
+
+1. Obtain a 5-fold cross-validation set for mpg_new, stratified by manufacturer.
+
+```{r mpg_new_cv}
+set.seed(1223)
+mpg_cv <- vfold_cv( mpg_new, v = 5, strata = manufacturer )
+
+```
+
+Obtain cross-validation predictions of the AUC and accuracy of this model
+
+```{r mpg_new_resample}
+
+mpg_r_wf <- workflow() %>%
+  add_model(kknn_spec) %>% 
+  add_formula(manufacturer ~ cty + displ)
+
+mpg_refits <- fit_resamples(
+  mpg_r_wf,
+  resamples = mpg_cv)
+
+mpg_refits %>% 
+ collect_metrics()
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

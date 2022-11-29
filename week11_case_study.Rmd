@@ -1,0 +1,816 @@
+---
+title: "week 11 Case study"
+author: "Huining H"
+date: "31/10/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(knitr,dplyr)
+pacman::p_load(tidyverse, inspectdf,tidyr,stringr, stringi)
+pacman::p_load(caret,modelr)
+pacman::p_load(mlbench,mplot)
+pacman::p_load(tidymodels,glmx,discrim)
+pacman::p_load(skimr,vip,yardstick,ranger,kknn)
+```
+
+# Linear Discriminant Analysis (LDA)
+
+LDA is a method you can use to classify observations into an arbitrary number of groups.
+
+As an example, you are going to look at the Iris dataset (Links to an external site.). This was the original use of LDA. The data consists of 50 flowers from each of three species of iris. 
+
+```{r iris_data}
+library(MASS)
+data("iris")
+iris <- as_tibble(iris)
+iris
+ggplot( iris, aes( x= Sepal.Length, y = Sepal.Width, col = Species )) + 
+ geom_point()
+```
+Figure 2.21: Scatterplot of sepal length by sepal width coloured by species, from the Iris dataset.
+
+
+fit LDA using lda from the MASS package:
+
+```{r iris_lda_fit}
+iris.lda <- lda( Species ~ Sepal.Length + Sepal.Width, data = iris )
+iris.lda
+```
+
+What you are more interested in is decision boundaries. LDA will give us boundaries that will separate the grid of ‘sepal length’ and ‘sepal width’ to give us the class. The best way to illustrate this is by using our LDA model to predict over a grid.
+
+First, set up a grid of sepal length and width:
+
+```{r iris_sepal_grid}
+sepal.grid <- expand.grid( 
+ Sepal.Length = seq( 4, 8, length = 100 ), # This gives us 100 points between 4 and 8
+ Sepal.Width = seq( 2, 4.5, length = 100 ) # This gives 100 points between 2 and 4.5
+)
+sepal.grid <- as_tibble(sepal.grid)
+sepal.grid
+```
+
+Next, use the model to predict the species for each point in the grid:
+
+```{r iris_sepal_grid_predict}
+sepal.grid$Species <- predict( iris.lda, sepal.grid )$class
+sepal.grid
+```
+
+Finally, plot the grid and the observations:
+
+```{r iris_sepal_grid_predict_plot}
+ggplot( sepal.grid, aes( x = Sepal.Length, y = Sepal.Width, fill = Species ) ) + 
+ geom_tile( alpha = 0.2 ) + 
+ geom_point( data = iris, aes( col = Species, fill = NA ) )
+```
+
+Figure 2.22: Decision boundaries from LDA on the Iris dataset.
+
+
+
+
+# LDA and TidyModels
+
+you have seen how to fit LDA with basic R packages, but it’s time to get fancy. How are you going to do this with TidyModels?
+
+First up, you need to download and load the package discrim.
+
+ ```{r discrim}
+library(discrim)
+```
+
+This is a partner package to TidyModels that allows you to fit various disciminant analyses. Now, you have:
+
+Model: You are going to fit LDA.
+Package: You are going to fit it with MASS.
+Fit: You are going to fit species on sepal length and width from the Iris package.
+
+```{r iris_discrim}
+iris_lda_tidy <- discrim_linear( mode = "classification" ) %>% 
+ set_engine( "MASS" ) %>% 
+ fit( Species ~ Sepal.Length + Sepal.Width, data = iris )
+iris_lda_tidy
+```
+
+You see we get exactly the same output as before, but in the nice, exchangeable format that TidyModels provides. Once again, let’s have a look at those decision boundaries. You are going to predict over that same grid as before.
+
+```{r iris_discrim_grid}
+sepal.grid <- sepal.grid %>% 
+ bind_cols(
+  predict( iris_lda_tidy, new_data = sepal.grid, type = "class" )
+  )
+sepal.grid
+```
+
+
+
+```{r iris_discrim_grid_plot}
+ggplot( sepal.grid, aes( x = Sepal.Length, y = Sepal.Width, fill = .pred_class ) ) + 
+ geom_tile( alpha = 0.2 ) + 
+geom_point( data = iris, aes( col = Species, fill = NA ), show.legend = FALSE )
+```
+Figure 2.23: Decision boundaries of LDA with TidyModels.
+
+Now, we have a method for classification. We can use our sepal length and width, and the colour of the region that our point lies in gives our predicted species.
+
+
+# Case Study — Regression
+
+we are going to grab some data, explore the data, and fit some regression models to find the model that best predicts the data.
+
+The data is  the American TV version of The Office. These data are contained in the R package schrute, so make sure you install it with the install.packages function.
+
+Our goal is to try to predict the rating an episode will get based on the information about the episode. We will also be interested in seeing which are the most important variables in predicting the rating of an episode.
+
+```{r theoffice_data}
+library( schrute )
+office_info <- theoffice
+```
+
+index - An ID variable
+season - The season number
+episode - The episode number
+episode_name - The title of the episode
+director - The director of the episode
+writer - The writer of the episode
+character - Character name
+text - Text said by the character
+text_w_direction - Dialogue with direction
+imdb_rating - The rating per episode from IMDb—this will be our outcome variable
+total_votes - The total number of votes for the episode on IMDb
+air_date - The date the episode aired on TV
+
+We want to use this data to do some modelling, however, there are some important steps we need to go through first: data cleaning and exploratory data analysis. This data does not require much cleaning, but it does involve a bit of data manipulation to get it into a nice format for us to analyse.
+
+# Case Study — Data Cleaning
+
+## Skim the data
+
+ ```{r office_skim}
+skim( office_info )
+```
+
+First of all we have 55,130 observations on 12 variables. There are 186 unique episodes, 61 unique directors, 47 writers and 773 named characters. We are going to try to find the influential characters and writers/directors to use in our model.
+
+# Case Study — Tidying Variables — Part 1
+
+The very first thing we are going to do is drop some variables. For the purpose of our analysis, we are not interested in any of the dialogue, so we are going to drop the text variables from our dataset. We can also drop the index variable, since this is simply an ID for each observation. The final thing we are going to drop is the air_date variable. There could be some interesting behaviours with the date an episode was released. More often than not, episodes are released in sequential order so this won’t give us much more information than the season and episode number.
+
+```{r office_drop_variables}
+office_info <- office_info %>% 
+  select( -index, -text, -text_w_direction, -air_date )
+office_info %>% 
+  head()
+```
+
+Now we have the episodes we are interested in, where the episode_name can act as our ID column.
+
+The next thing we are going to do is explore the characters to tidy up that column a bit for us. Let’s see how many times a character speaks in each episode:
+
+```{r office_count}
+ office_info %>% 
+  count( episode_name, character ) 
+```
+
+We can read this as saying that Andy speaks 28 times in A Benihana Christmas (Parts 1&2), Angela speaks 37 times, and so on. However, there are already some nasty things appearing for us here. There are characters such as “Andy and Michael” and “Both”. Also, they don’t speak all that much in an episode.
+
+We want to account for this by removing the one-off characters and those without many lines in the show. We can add another count to what we have which will count up how many times a character appears in the whole series. This is done with the add_count functions:
+
+ office_info %>% 
+  count( episode_name, character ) %>% 
+  add_count( character, 
+             wt = n, 
+             name = "character_count" )
+             
+So, this function is saying:
+
+we want to count up the character’s appearance
+we want to add up the value of n corresponding to that character
+we want to name it “character_count”.
+
+We see from this that Andy speaks a total of 3,754 times throughout the series, whereas “Both” speaks a total of 13 times. We can now filter out those who don’t have many lines throughout the series. Let’s choose a cut-off of speaking 800 times, since this reduces the number of speaking characters down to 15, which is much more reasonable than 773.
+
+```{r office_count_filter}
+ office_info %>% 
+  count( episode_name, character ) %>% 
+  add_count( character, 
+             wt = n, 
+             name = "character_count" ) %>% 
+  filter( character_count > 800 )  
+```
+
+The next thing we are going to do is change this into wide format so that we have one line for each episode. This is done with the pivot_wider function as follows:
+
+```{r office_wider}
+ office_info %>%
+  count( episode_name, character ) %>%
+  add_count( character, wt = n, name = "character_count" ) %>%
+  filter( character_count > 800 ) %>%
+  select( -character_count ) %>% # We are not interested in this any more
+  pivot_wider( names_from = character,
+               values_from = n,
+               values_fill = list( n = 0 ) )
+```
+
+
+This shifts all our characters so that they have a column each, and in that column is a number that represents how many lines these characters have in each episode of the show. The line values_fill = list(n = 0) just ensures that characters get a value of 0 if they do not speak in the episode. Let’s go ahead and save this in a dataset so that we can come back to it later.
+
+```{r office_wider_save}
+ office_characters <- office_info %>%
+  count( episode_name, character ) %>%
+  add_count( character, wt = n, name = "character_count" ) %>%
+  filter( character_count > 800 ) %>%
+  select( -character_count ) %>% 
+  pivot_wider( names_from = character,
+               values_from = n,
+               values_fill = list( n = 0 ) )
+```
+
+# Case Study — Tidying Variables — Part 2
+
+Next, we are going to lump the directors and writers together since there are a lot of double-ups between these two variables. The first thing we are going to do is use distinct to find the unique values for a writer and director per episode. We will then flip this into long format such that the role of the person (writer or director) goes into one column, and their name goes into the other:
+
+
+```{r office_longer}
+ office_info %>% 
+  distinct( episode_name, director, writer ) %>% 
+  pivot_longer( director:writer, names_to = "role", values_to = "person" )
+```
+
+The first thing we see is that we have multiple writers for a single episode, such as “Ricky Gervais; Stephen Merchant; Greg Daniels”. We can fix this up so they all get counted individually with a useful function called seperate_rows:
+
+```{r office_separate_rows}
+ office_info %>% 
+  distinct( episode_name, director, writer ) %>% 
+  pivot_longer( director:writer, names_to = "role", values_to = "person" ) %>% 
+  separate_rows( person, sep = ";" )
+```
+
+That is a really useful function to keep in your back pocket when you come across data like this. Now, if you recall, there are a lot of writers and directors on this show, so let’s filter this down a bit just like we did for the characters. To do this, we add a count of the person variable and filter down by this.
+
+
+```{r office_person_count}
+ office_info %>% 
+  distinct( episode_name, director, writer ) %>% 
+  pivot_longer( director:writer, names_to = "role", values_to = "person" ) %>% 
+  separate_rows( person, sep = ";" )%>%
+  add_count( person ) %>%
+  filter( n > 10 )
+```
+
+
+I have chosen to filter by those that appear more than 10 times as a director or writer, as this brings us down to a much more manageable value of 13 unique people. Next, let’s find the unique people per episode (so if they both wrote and directed the episode, we only count them once). We are also going to add a counting variable so that each person will get a 1 if they are involved in an episode.
+
+```{r office_person_count_unique}
+ office_info %>% 
+  distinct( episode_name, director, writer ) %>% 
+  pivot_longer( director:writer, names_to = "role", values_to = "person" ) %>% 
+  separate_rows( person, sep = ";" )%>%
+  add_count( person ) %>%
+  filter( n > 10 ) %>% 
+  distinct( episode_name, person ) %>% 
+  mutate( person_value = 1 )
+```
+
+
+Finally, let’s convert this back into wide format so that we have one row per episode:
+
+```{r office_person_count_unique_wide}
+ office_info %>% 
+  distinct( episode_name, director, writer ) %>% 
+  pivot_longer( director:writer, names_to = "role", values_to = "person" ) %>% 
+  separate_rows( person, sep = ";" )%>%
+  add_count( person ) %>%
+  filter( n > 10 ) %>% 
+  distinct( episode_name, person ) %>% 
+  mutate( person_value = 1 ) %>% 
+  pivot_wider( names_from = person, 
+               values_from = person_value,
+               values_fill = list( person_value = 0 ) )
+```
+
+This is now set up so that each person has their own column that takes the value 1 if they are involved in an episode and the value 0 if they are not. Let’s save this just like our character information.
+
+
+```{r office_person_count_unique_wide_save}
+ office_creators <- office_info %>% 
+  distinct( episode_name, director, writer ) %>% 
+  pivot_longer( director:writer, names_to = "role", values_to = "person" ) %>% 
+  separate_rows( person, sep = ";" )%>%
+  add_count( person ) %>%
+  filter( n > 10 ) %>% 
+  distinct( episode_name, person ) %>% 
+  mutate( person_value = 1 ) %>% 
+  pivot_wider( names_from = person, 
+               values_from = person_value,
+               values_fill = list( person_value = 0 ) )
+```
+
+
+# Case Study — Tidying Variables — Putting it Together
+
+Now comes the fun part: putting it all together. We are going to use the function inner_join to join all this information together. First things first, though; we need to collapse down our office_info dataframe so that we only have one row per episode. We will use the distinct function to do this.
+
+```{r office_info_distinct}
+ office_info %>% 
+  distinct( season, episode, episode_name, imdb_rating, total_votes )
+```
+
+So, this is saying we only want to look at unique combinations of the season, episode number, name, rating and total number of votes. You can see this has squeezed our data frame down to just the unique 186 episodes. We will now use the inner_join function, which will combine all three of our dataframes (info, character and creator) by matching up based on the episode name:
+
+
+```{r office_inner_join}
+ office_final <- office_info %>%
+  distinct( season, episode, episode_name, imdb_rating, total_votes ) %>% 
+  inner_join( office_characters ) %>%
+  inner_join( office_creators ) 
+office_final
+```
+
+We are going to do one more thing before we move on. If you look closely at some of our variables, they are not named nicely in the sense that there are white spaces in them, i.e. the variable Ken Kwapis. A lot of things in R do not like when you have white space in your variable names. There is a nice package called janitor that allows us to fix this really easily with the function clean_names:
+
+
+```{r office_clean_names}
+library( janitor )
+office_final <- office_final %>% 
+  clean_names()
+office_final
+```
+
+There we have it. Our data is now ready for us to explore what is going on with it. We will drop the episode_name variable before it comes to modelling as this is simply an ID, but for now let’s keep it to find interesting episodes. Before we move on, let’s give it one more skim so we have a good reference to jump back to.
+
+
+skim( office_final )
+
+# Case Study — Exploratory Data Analysis — Part 1
+
+box plot of the rating for each episode number throughout the seasons. 
+
+
+```{r office_final_boxplot}
+office_final %>% 
+  ggplot( aes( x = episode, 
+               y = imdb_rating, 
+               fill = as.factor( episode ) ) ) +
+  geom_boxplot( show.legend = FALSE ) # We do not need a legend for this plot
+```
+Figure 6.1: Box plot of rating by episode number
+
+So, on average, it looks like we have an increase in episode rating as the season progresses. The first episode of the season is quite variable, but, on average, very highly rated. We can also see that there is not a consistent number of episodes in each season, with one season having up to 28 episodes.
+
+
+## Ratings over seasons
+
+How does the rating change over the seasons of the show? Let’s look at a plot of the average rating per season to investigate this.
+
+detach(package:plyr)
+```{r office_rate_season}
+office_final %>% 
+  group_by( season ) %>% 
+  summarise( mean_rating = mean( imdb_rating ) ) %>% # Get the mean per season
+  ggplot( aes( x = season, y = mean_rating, colour = as.factor( season ) ) ) +
+  geom_point( size = 10, show.legend = FALSE ) +
+  geom_text( aes( label = season ), colour = "black") # We can keep track of the seasons easily
+```
+Figure 6.2: Scatterplot of average rating per season
+
+It looks like The Office reached its peak popularity in Season 4, with Season 8 being a total flop by their usual standards. There is definitely this nonlinear trend in the average episode ratings for each season that will affect our models.
+
+
+## Effect of votes on ratings
+
+Let’s see how the total votes affect our ratings.
+
+```{r office_total_affect}
+office_final %>% 
+  ggplot( aes( total_votes, imdb_rating, colour = as.factor( season ) ) ) +
+  geom_text( aes( label = episode_name ), 
+             check_overlap = T ) + # This will make it look tidier
+  theme_minimal() +
+  labs( colour = "season" )
+```
+
+Figure 6.3: Scatterplot of total votes vs. rating
+
+This is a nice scatterplot where we can actually track which episodes got which ratings. We have coloured it by season to make it a bit easier to visualise here. We see straight away that the finale was the most voted for and by far the most popular episode in the whole show. Also, the episode where the main character, Michael, leaves the show was a very popular episode (although this is not visible here). If we take away those three outliers, we see a moderate, positive, linear relationship between the total votes an episode gets and the rating of the show. It definitely looks like total votes will be useful in our model.
+
+
+# Case Study — Exploratory Data Analysis — Part 2
+
+Now, let’s have a look at how the character involvement affects the rating of an episode of The Office. We are not going to explore all the possible characters, so let’s just pick two. A couple of fan favourites for this show are Dwight and Jim, and they are known for their interactions with each other. Let’s see if this interaction has any effect on the ratings of an episode.
+
+## Does Dwight or Jim mean higher ratings?
+
+```{r office_higher_reating}
+office_final %>% 
+  mutate( factor_rating = ifelse( imdb_rating >= 8.7, "High", "Low" ) ) %>% 
+  ggplot( aes( x= dwight, 
+               y = jim, 
+               colour = factor_rating, 
+               label = episode_name ) ) +
+  geom_text( check_overlap = T ) +
+  labs( colour = "Rating" )
+```
+Figure 6.4: Scatterplot of episodes in The Office, coloured by rating
+
+
+We have classified the episodes into ‘High’ rating and ‘Low’ rating by defining the top 25% of ratings as ‘High’. We see a couple of things here. First, there seems to be a positive linear relationship between appearances of Dwight and Jim: episodes with more Dwight in them tend to have more Jim in them. The other is that episodes with a lot of both Dwight and Jim tend to have higher ratings: there is a cluster in the upper right corner that is all high-rated episodes. This is definitely an interesting interaction between our characters!
+
+The last thing we are going to look at is how the creators contribute to the ratings of the show. As before, we are not going to consider all the creators (since there are a lot of them), so we will only look at the two most prominent ones: Greg Daniels and Mindy Kaling.
+
+## Contributor contribution to rating
+
+```{r office_reating_Contributor}
+office_final %>% # Let's relabel their values for convenience 
+  mutate( greg_daniels = ifelse( greg_daniels == 1, "Yes", "No" ), 
+          mindy_kaling = ifelse( mindy_kaling == 1, "Yes", "No" ) ) %>% 
+  ggplot( aes(  x = greg_daniels , 
+                y = imdb_rating, 
+                fill = mindy_kaling ) ) +
+  geom_boxplot() +
+  labs( x = "Is Greg Daniels involved?",
+        fill = "Is Mindy Kaling involved?" )
+```
+Figure 6.5: Side-by-side box plots of ratings for Greg Daniels and Mindy Kaling
+
+Okay, so it looks like episodes that have Greg Daniels involvement tend to have higher ratings on average. Also, episodes with both Mindy Kaling and Greg Daniels working on them have the best ratings. However, let’s take this with a grain of salt. To see why, we will count the number of episodes they are both involved in.
+
+
+```{r office_reating_Contributor_count}
+office_final %>% 
+  count( greg_daniels, mindy_kaling )
+```
+
+There are only two episodes that both Greg and Mindy work on. This is not super informative about the true rating when they both work on episodes. We cannot get too excited by what we see in the pretty box plot there.
+
+
+# Case Study — Model Fitting — Data Splitting and Preprocessing
+
+We are going to do the following six steps to fit our model:
+
+Split our data into testing and training sets.
+Pre-process our data.
+Introduce and define some model specifications.
+Tune the models we are considering.
+Select the best model for predicting our data.
+Evaluate how well this model does on test data.
+
+## 1. Data splitting
+
+Let’s split up our data into a testing and training set to see just how good we can get at predicting the rating of an episode. Be warned here, there are a total of 136 observations in this dataset, so neither the test nor training set will be particularly large. This could lead to some dodgy predictions in the long run.
+
+We will use initial_split from the rsample package. Let’s do two fancy things here:
+
+We will drop the episode name from the dataset when we split it. This is just an ID column, so we don’t want to use it to model.
+We will stratify by season. This way, every season gets a say in how the model is built.
+
+
+```{r office_split}
+set.seed( 1223 )
+office_split <- initial_split( select( office_final, -episode_name ), strata = season )
+office_train <- training( office_split )
+office_test <- testing( office_split )
+office_train
+```
+
+here are 100 episodes in the training set, and we have gotten rid of the identifying variable. We are now ready to preprocess this data.
+
+## 2. Preprocessing
+
+```{r office_preprocessing}
+office_recipe <- recipe( imdb_rating ~ . , data = office_train ) %>% 
+  step_zv( all_predictors() ) %>% 
+  step_normalize( all_predictors() ) %>% 
+  step_corr( all_predictors() ) %>% 
+  prep()
+office_recipe
+```
+
+Our outcome variable is imdb_rating, and we are interested in looking at all the other variables as predictors. Then we have three steps:
+
+step_zv: This will remove any predictors that have zero variance, that is, variables that are constant across all episodes.
+
+step_normalize: This will normalise our predictors to have mean 0 and standard deviation 1. This will improve the performance of some of our models.
+
+step_corr: This will remove highly correlated predictor variables. When variables are highly correlated, this can cause some issues with fitting the model. Sometimes it is better to just remove them.
+
+Alright, there are 31 predictors and one outcome. No variables had zero variance, so that’s good. All of our predictors were normalised, and we removed the information about creator, Gene Stupintsky, because he was too highly correlated with the other predictor variables.
+
+We will juice our recipe to get our preprocessed training data, then we will move onto the models we want to consider.
+
+```{r office_preprocessing_juice}
+office_train_preproc <- juice( office_recipe )
+office_train_preproc %>% 
+  head()
+```
+
+# Case Study — Model Fitting — Comparing Models
+
+## 3. The models
+
+We are going to compare three models for predicting on this dataset:
+
+Let’s consider a simple linear regression. If all models are fairly similar, it is always good to go with the simple ones.
+The next step will be a lasso regression. This should eliminate the predictors that are not adding a lot of information to the model. We will tune the penalty parameter.
+Finally, let’s look at a random forest for regression. This is our most flexible model, so should be best for predicting the data. We will fix the number of trees to 100 to reduce the computational burden, but we will tune the mtry and min_n parameters.
+You haven't learnt about lasso regression in this course, however, it is a type of linear regression that uses shrinkage. Shrinkage is where data values are shrunk towards a central point, like the mean. The lasso procedure encourages simple, sparse models (i.e. models with fewer parameters) which is well-suited for models showing high levels of multicollinearity or when you want to automate certain parts of model selection, like variable selection/parameter elimination. It is included as an example in this section to show you how to fit another type of regression model.
+
+Let’s define our model specifications.
+
+
+
+```{r office_model_specifications}
+## Linear regression
+lm_spec <- linear_reg( mode = "regression" ) %>% 
+  set_engine( "lm" )
+## Lasso regression
+lasso_spec <- linear_reg( 
+  mode = "regression", 
+  penalty = tune(), 
+  mixture = 1 
+) %>% 
+  set_engine( "glmnet" )
+## Random forest
+rf_spec <- rand_forest( 
+  mode = "regression",
+  mtry = tune(),
+  trees = 100,
+  min_n = tune() 
+) %>% 
+  set_engine( "ranger", importance = "permutation"  )
+```
+
+Let’s tune the lasso regression and random forest, then we can compare how well the models are doing.
+
+# Case Study — Model Fitting — Tuning
+
+## 4. Tuning
+
+Our lasso regression and our random forest both need to be tuned. To do this, we need some resamples to tune on. We are going to tune these models on some bootstrapped data. We briefly discussed the concept of bootstrapping in Week 10: Random Forest — The Theory, but all we need to remember for now is that it is a nifty way of resampling our data to get repeated samples. This is done with the bootstraps function from rsample, which takes the same kind of inputs as our usual cross-validation.
+
+```{r office_bootstraps}
+set.seed( 1234 )
+office_boots <- bootstraps( office_train_preproc, times = 10,  strata = season )
+office_boots
+```
+
+So, we have made 10 bootstrap resamples, stratified by season. 
+
+It is very similar to the cross-validation we are used to. Now we have some resamples, we can get to tuning. Let’s start with the lasso regression.
+
+
+# Case Study — Model Fitting — Tuning — Lasso Regression
+
+To tune the lasso regression, we need a grid of penalty parameters to try out. Let’s use the functions grid_regular from tune and penalty from dials to do this. We will try out 50 different penalty parameters.
+
+```{r office_grid}
+penalty_grid <- grid_regular( penalty(),
+                              levels = 50 )
+penalty_grid
+```
+
+Excellent. We can now use tune_grid to tune our model. We need to give it our formula, our model specification, our resamples and our penalty grid. This should tune pretty quickly.
+
+```{r office_tune}
+set.seed( 2020 )
+lasso_grid <- tune_grid( object = lasso_spec,  preprocessor = recipe(imdb_rating ~ . , data = office_train_preproc),
+                         resamples = office_boots,
+                         grid = penalty_grid )
+```
+
+Let’s have a look at these results graphically. We will plot our RMSE and R2 against our penalty values to see how they change for different values.
+
+```{r office_grid_plot}
+lasso_grid %>% 
+  collect_metrics() %>% 
+  ggplot( aes( penalty, mean, color = .metric ) ) +
+  geom_line() +
+  facet_wrap( ~.metric, scales = "free", nrow = 2) +
+  scale_x_log10() # it looks better on a log_10 scale
+```
+Figure 6.6: Lasso regression metrics for different penalty parameters
+
+There is a definite drop in RMSE and rise in R2 that we can see here. What penalty value gives us the best RMSE for this model?
+
+
+```{r office_RMSE_best}
+best_lasso_rmse <- select_best( lasso_grid, "rmse" )
+best_lasso_rmse
+```
+
+Excellent. Now, we can finalise our lasso regression and move on to tuning the random forest.
+
+```{r office_lasso_finalize_model}
+final_lasso <- finalize_model( lasso_spec, best_lasso_rmse )
+final_lasso
+```
+
+# Case Study — Model Fitting — Tuning — Random Forest
+
+We will need a grid of parameter values to try, so let’s make one with grid_regular. Remember that we need to be tricky with the mtry parameter and use the finalize function to define our grid. Let’s try five unique values for each parameter (so we have a total of 25 parameter combinations to consider).
+
+```{r office_rand_spec_grid}
+rand_spec_grid <- grid_regular( 
+  finalize( mtry(), 
+            office_train_preproc %>% 
+              dplyr::select( -imdb_rating ) ),
+  min_n(),
+  levels = 5 )
+rand_spec_grid
+```
+
+Okay, we can now tune our random forest model. 
+
+
+```{r office_rand_tune_grid}
+set.seed( 1959 )
+rf_grid <- tune_grid( object = rf_spec,
+                      preprocessor = recipe(imdb_rating ~ . , data = office_train_preproc),
+                      resamples = office_boots,
+                      grid = rand_spec_grid )
+```
+
+
+let’s plot these results like we did before. We are going to get a little fancy here because we have two possible parameters to consider, so buckle up. In particular, we are going to convert the min_n parameter to a factor so we can get some really pretty plots.
+
+```{r office_rand_tune_grid_plot}
+rf_grid %>% 
+ collect_metrics() %>% 
+  mutate( min_n = as.factor( min_n ) ) %>% 
+  ggplot( aes( x = mtry, y = mean, colour = min_n ) ) +
+  geom_point( size = 2 ) +
+  geom_line( alpha = 0.75 ) +
+  facet_wrap( ~ .metric, scales = "free", nrow = 3 )
+```
+Figure 6.7: Random forest metrics for different parameter values—regression
+
+It looks like the combination of mtry = 22 and min_n = 2 is giving the best results for us. Let’s look:
+
+```{r office_best_rf_resm}
+best_rf_rmse <- select_best( rf_grid, "rmse" )
+best_rf_rmse
+```
+ Let’s finalise our random forest so we can get onto model selection.
+ 
+```{r office_rf_finalize}
+final_rf <- finalize_model( rf_spec, best_rf_rmse )
+final_rf
+```
+
+
+# Case Study — Model Fitting — Model Selection
+
+
+## 5. Model selection
+
+One of the beauties of cross-validation means we can get an idea of how our model is going to perform on new data, so the model with the best cross-validation results should perform best on our test set.
+
+Let’s grab some cross-validation folds now; 10 should be enough.
+
+```{r office_cross_validation}
+set.seed( 1967 )
+office_cv <- vfold_cv( office_train_preproc, v = 10, strata = season )
+```
+
+Okay, let’s go ahead and get our cross-validation estimates to help us choose between our models. We will start with linear regression. Remember that we need to use fit_resamples to do this.
+
+
+```{r office_cross_validation_lm}
+lm_cv <- fit_resamples( object = lm_spec,
+                        preprocessor = recipe(imdb_rating ~ . , data = office_train_preproc), 
+                        resamples = office_cv )
+lm_cv %>% 
+  collect_metrics()
+```
+
+
+Let’s see how the lasso regression does:
+
+
+```{r office_cross_validation_lasso}
+lasso_cv <- fit_resamples( object = final_lasso,
+                           preprocessor = recipe(imdb_rating ~ . , data = office_train_preproc), 
+                           resamples = office_cv )
+lasso_cv %>% 
+  collect_metrics()
+```
+
+
+Alright, a significant improvement! Our RMSE has dropped by about 0.06, and our R2 has increased by about 0.1, which is great! Time to see if the random forest model can trump this!
+
+```{r office_cross_validation_rf}
+set.seed( 789 )
+rf_cv <- fit_resamples( object = final_rf,
+                        preprocessor = recipe(imdb_rating ~ . , data = office_train_preproc), 
+                        resamples = office_cv )
+rf_cv %>% 
+  collect_metrics()
+```
+
+Wowsa! This is incredible. Our RMSE has dropped by almost 0.1 and our R2 has increased by almost 0.18. We most definitely have a winning model here.
+
+May I present the winner, champion, and undisputed number 1: The random forest model.
+
+
+# Case Study — Model Fitting — Model Evaluation
+
+## 6. Model evaluation
+
+Now, let’s finally fit our random forest model so we can start getting some predictions.
+
+```{r office_final_rf}
+set.seed( 1223 )
+office_rf <- final_rf %>% 
+  fit( imdb_rating ~ . , data = office_train_preproc )
+```
+
+So, what variables are important in the rating on IMDb for an episode of The Office?
+
+Let’s have a look at our variable importance plot to get an idea of this.
+
+```{r office_final_rf_vip}
+office_rf %>% 
+  vip( )
+```
+Figure 6.8: VIP plot for The Office random forest
+
+From this plot, it is clear that the total amount of votes is by far the most important predictor of the rating for an episode. The episode number and season are the next most important predictors in this model. This more or less lines up with what we saw in our exploratory data analysis. Remember that we also noted a few interactions between our predictor variables that seemed quite interesting. We have not accounted for those types of interactions in our model to keep what we are doing at a relatively simple level, but it is fully possible that those interactions could improve our model greatly.
+
+Nonetheless, let’s persist and get some predictions to see how well this model does on some brand new data.
+
+Thanks to our cross-validation, we have a fair idea of how well our random forest should predict on brand new data, but we can get a better idea of this. This is where that handy test dataset comes in. The first thing we have to do is bake our test data with our recipe.
+
+```{r office_final_rf_bake}
+office_test_preproc <- bake( office_recipe, office_test )
+office_test_preproc
+```
+
+Alright, our test set is now all nicely preprocessed. Now, we can predict our ratings for each episode in the test data. Let’s grab those predictions and add on the truth so we can compare them.
+
+```{r office_final_rf_predict}
+office_preds <- predict( office_rf, # The predictions
+                         new_data = office_test_preproc ) %>% 
+  bind_cols( office_test_preproc %>%  # Add the truth
+               select( imdb_rating ) )
+office_preds 
+```
+
+This is not looking horrid, just viewing the numbers here, but we can do better than just eyeballing it. First, let’s look at this graphically. We can plot our true values against our predicted values. If our model is doing really well, we would expect the points to lie along the y=x line. Let’s see if we get this.
+
+```{r office_final_rf_predict_plot}
+office_preds %>% 
+  ggplot( aes( x = .pred, y = imdb_rating ) ) +
+  geom_point() +
+  geom_abline( intercept = 0, slope = 1, colour = "red" ) +
+  theme_minimal()
+```
+Figure 6.9: Scatterplot of the truth versus the predicted values
+
+That line is our y=x line and, as you can see, most of the points are not lying on that line. The majority of those points are lying above the line, meaning that we are under-predicting our episode ratings more often than not. Not looking quite optimal there. Let’s grab our RMSE and R2 with metrics.
+
+```{r office_final_rf_predict_RMSE_r2}
+office_preds %>% 
+  metrics( truth = imdb_rating, estimate = .pred )
+```
+
+Okay, well that is not what we were expecting. Our RMSE is larger than our cross-validated RMSE, and our R2 is lower than our cross-validated R2.
+
+This could be attributable to two things:
+
+This could be the case of the random sampling inherent in our cross-validated RMSE. No matter what we see, it is still just an estimate at what the RMSE should be, so on any dataset, we can fully expect to see values that are way off from our cross-validated results.
+Our training data is not a representative sample of our full dataset. If this is the case, then our testing data will be wildly different from our training data, hence the cross-validated RMSE will not be representative of how our model will predict on the test data.
+There you have it. We took some data that had a nice regression-like question attached to it. We cleaned it up a bit, looked around to see what it was hiding, then built and evaluated some models on it. I am feeling so happy with that, that I think it is time for a little quiz to see just how much attention you paid.
+
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

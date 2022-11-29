@@ -1,0 +1,389 @@
+---
+title: "Linear regression"
+author: "Huining H"
+date: "28/08/2021"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(knitr,dplyr)
+pacman::p_load(tidyverse, inspectdf,tidyr,stringr, stringi)
+pacman::p_load(caret)
+pacman::p_load(mlbench,mplot)
+```
+
+
+# Fitting a Linear Model in R
+
+* response variable and a predictor
+* fit a model of the form
+
+$$y_i = \beta_0 + \beta_1 x_i + \epsilon_i$$
+
+
+```{r data_diamonds}
+data(diamonds)
+diamonds
+```
+
+We will look at predicting the log price of a diamond using the log carat.
+
+```{r diamonds_logcarat}
+diamond_lm  <- lm(log(price) ~ log(carat), data = diamonds)
+summary(diamond_lm)
+```
+
+
+So let’s break this down:
+
+1. lm(): the main command is the lm command. This is short for Linear Model. Linear models are a general form of models of which straight lines are an example.
+1. log(price) ~ log(carat): We need to let R know which variable is the response variable and which is the predictor variable. We use the formula notation. This involves a tilde ~. The variable on the left of the ~ is the response variable, while the variable on the right of the ~ is the predictor variable. So it takes this form response ~ predictor. We will look at more complicated formulas later.
+1. data = diamonds: we need to let R know where the variables are and so this command gives the name of the dataframe.
+1. diamond_lm <-: this saves the linear model for later with the label diamond_lm.
+
+
+# Estimating the Slope and Intercept Using Least Squares
+
+Examining the scatterplot shows that we could consider many straight lines to the data.
+Now how do we find the best line through the data? Well, one sensible definition of “best” might involve these distances or residuals for each data point from the line.
+
+What we’d like to do is to minimise the total distance of each point from that line.
+
+Remember the formula for our model is this:
+$$y_i=β_0+β_1x_i+ϵ_i$$
+
+And for each data point those distances are exactly the error terms \epsilon_i. So we want to minimise something about the errors:
+
+$$ϵ_i=y_i-β_0-β_1x_i$$
+
+Because sometimes these epsilons can be negative, we should really minimise the sum of squares:
+
+$$C=\sum\limits^N_{i=1}ϵ^2_i=\sum\limits^N_{i=1}(y_i−β_0−β_1x_i)^2$$
+
+You can actually do some calculus on this expression to get exact values for the minimisers β^0hat and β^1, which turn out to be:
+
+
+$$\hat{\beta }_1=\frac{Cov(x,y)}{Var(x)}$$
+
+And
+
+$$\hat{β}_0=\bar{y}-\hat{β}_1\bar{x}$$
+
+when we fit a linear model to data, we’re essentially finding a line of best fit to the data. We’re doing a calculation which finds the parameters β0 and β1, which minimises the total squared distances of each data point from our line.
+
+
+Load the mpg dataset.
+```{r data_mpg}
+data(mpg)
+mpg
+```
+
+
+Fit a linear model with cty as the response variable, and displ as the predictor.
+By using summary(), look at the model. What is the estimate of the intercept?
+```{r mpg_logcarat}
+mpg_lm  <- lm(cty ~ displ, data = mpg)
+summary(mpg_lm)
+```
+The estimate of the intercept is 25.9915.
+
+
+What is the estimate of the slope?
+
+The estimate of the slope is -2.6305.
+
+# Interpreting the Linear Model Output
+
+## Interpreting the output
+
+
+```{r diamonds_out}
+out_dia <- summary(diamond_lm)
+out_dia
+```
+
+
+What is the predicted log price for a diamond with a given log carat?
+
+The information for that is in the part called Coefficients
+
+
+ Coefficients:
+             Estimate Std. Error t value Pr(>|t|)    
+ (Intercept) 8.448661   0.001365  6190.9   <2e-16 ***
+ log(carat)  1.675817   0.001934   866.6   <2e-16 ***
+
+The number under the heading Estimate gives us the information to write out the model.
+
+Earlier, we stated that the general model is:
+
+$$y_i = \beta_0 + \beta_1 x_i + \epsilon_i,\ i = 1, 2, \ldots, n,$$
+where $$\epsilon_i \sim N\left(0, \sigma^2\right)$$
+
+In our case, the  yi  is the log price for the  i th diamond, and the  xi  is the log carat for the  i th diamond.
+
+We also discussed that the parameter  β0  is called the intercept, and the parameter  β1  is the slope. The estimates in the table are the values for these from the data. The first one is? Go on have a guess! 
+
+Yes, it is the intercept, and the next one is the slope. I think the word intercept at the start probably gave it away, didn’t it?
+
+So our model is:
+
+\log(price) = 8.448661 + 1.675817 \times \log(carat).
+
+Let’s use this to predict the log price for a diamond with a log carat of 0.5. 
+
+8.448661 + 1.675817 * 0.5
+ [1] 9.286569
+
+So we predict from our first linear model, that a diamond with a log carat of 0.5 will have a log price of 9.286569. We can convert that back to dollars by undoing the log.
+
+exp(8.448661 + 1.675817 * 0.5)
+ [1] 10792.1
+
+A price of $10,792.10.
+
+But does the log carat of the diamond have an effect on log price? Well if it did not, then the slope would be zero. As when it changes, the log price would be constant. If we go back to our output, we see that we estimated that the slope is 1.675817. Maybe this could be in reality zero, and we just happened by chance to get 1.675817. We can test that, in fact, that is what the rest of the table gives us.
+
+First, we have a P-value labelled Pr(>|t|). For our purposes here, this is a number that tells us something about whether coefficients are significantly different from zero. If the P-value is small, the coefficient is different from zero. In our case we have a P-value of less than  2×10−16  - that is small. It is roughly like tossing a coin 52 times and getting a head every single time. If you are not sure if it is small - R helps - those three stars *** tells us that “yes slope is not zero”.
+
+So we can predict and make sure that the model is useful, but we should check that the model is correct. 
+
+
+## Interpreting the slope
+
+ In our example we have a slope estimate of 1.675817. 
+ this number tells us how the response variable changes when the predictor varies
+ If we increase the carat of a diamond by one on the log scale, then on average the price will increase by 1.675817 on the log scale.
+ 
+ 
+ What about if the carat increase by ten?
+ log(10)
+  [1] 2.302585
+ 
+ 
+on the log scale, this equates to an increase in price of:
+
+1.675817 * log(10)
+ [1] 3.858711
+
+## Interpreting the intercept
+
+the expected value of the response variable when the predictor is zero. In our example this is the price on the log scale of a diamond when the carat of a diamond is zero on the log scale.
+
+So when is a diamond’s carat on the log scale?
+
+If we check in R what the log of a one carat diamond is, we get:
+
+log(1)
+[1] 0
+
+So a one carat diamond will have a log value of zero and so our model predicts its price as:
+exp(8.448551)
+[1] 4668.303
+$4,668.30
+
+We can see that not only can we use the model for prediction, but also its coefficients - the slope and the intercept can be used to describe the relationship.
+
+```{r mpg_Exercises}
+summary(mpg_lm)
+```
+
+1. If the displacement of a car increases by 1 litre, what is the expected change in city fuel efficiency?
+-2.6305 
+
+1. What is the expected fuel efficiency in the city for a car with a displacement of 2 litres?
+25.9915 - 2.6305 * 2
+[1] 20.7305
+
+1. If the displacement of a car increases by 3 litres, what is the expected change in city fuel efficiency?
+-2.6305 * 3
+[1] -7.8915
+
+So a decrease of 7.8915 miles per gallon.
+
+
+# Checking Assumptions.... AKA is it Safe?
+
+Let’s recap the model::
+
+$$y_i = \beta_0 + \beta_1 x_i + \epsilon_i,\ i = 1, 2, \ldots, n,$$
+where $$\epsilon_i \sim N\left(0, \sigma^2\right)$$ independently.
+
+
+In our case, the yi is the log price for the ith diamond, and the xi is the log carat for the ith diamond.
+
+
+What are the assumptions that we have made using this model?
+
+1. A straight line was the best way to model the overall relationship between log price and log carat.
+1. The noise terms ϵi all have the same variance.
+1. The noise terms ϵi are normally distributed.
+1. The error terms are independent.
+
+
+We have names for each of the assumptions:
+
+
+1. Linearity
+1. Constant variance (homoscedasticity)
+1. Normality
+1. Independence
+
+Let’s check each assumption, but before we do, I am going to introduce some new terms which we’ll use throughout this course:
+
+*fitted value*: this is the value that the model predicts for a given point. For an example see the last section, where we predicted the log price for a diamond with a log carat of 0.5.
+*residual*: this is the observed value of a point minus the predicted value. So if the observed diamond log price for a diamond with a log carat of 0.5 is 10, then the residual is:
+10 - 9.286569
+[1] 0.713431
+
+# Linearity - Was a Linear Model the Right Approach?
+
+checking the red bit in the model
+
+In this one we are checking the red bit in the model:
+
+$$y_i = \color{red}{\beta_0 + \beta_1 x_i}\color{black} + \epsilon_i,\ i = 1, 2, \ldots, n$$.
+
+
+looking at a scatterplot to see if the relationship is linear, can be tricky. A better plot is the residual versus fitted plot, which we get this like this:
+
+
+```{r diamond_residual}
+plot(diamond_lm, which = 1)
+```
+ 
+What are we looking for?
+
+The main thing is whether there is any curvature in the points as we go from left to right. The red line helps look for any patterns. In this case, it is roughly straight which is a good sign – no trend in the residuals is an indication that the assumptions are satisfied.
+
+The interesting thing in this plot is not whether there is any curvature, but the “triangles” that seem to emerge from the data points (Eg. that big downward slope at the top of the picture from fitted values of 8.5 onwards). This is an artefact of the fact that the price of diamonds in the dataset is to the nearest dollar and the carat of diamonds are usually of a small number of common values:
+
+
+```{r diamond_caratbar}
+ggplot(diamonds,aes(carat)) + geom_bar()
+```
+
+# Homoscedasticity - Is the Noise Spread Evenly?
+
+Let's look at the assumptions of the noise structure. Notice the red term:
+
+$$\epsilon_i \sim N(0, \color{red}{\sigma^2}\color{black}) \, \text{independently}.$$
+
+Note that this does not have a little i. What this means is that the spread of the error term is the same for all values of the predictor.
+
+
+For this assumption, we could look at the plot from above, but a slightly better approach is to calculate the spread directly. We plot the square root of the standardised residual to show the spread like this:
+
+```{r diamond_spread}
+plot(diamond_lm, which = 3)
+```
+
+In this case, we would like to see an even spread of the points as we move from left to right – again, no apparent trends – as this would indicate that the model has constant spread. The red line helps to see the trend - we would like it to be roughly straight and flat.
+
+
+# Normality - Is the Noise Normally Distributed? (And Independence)
+
+
+Did you notice that we used which = 1 and then which = 3 to choose the plots. What about plot 2?
+
+```{r diamond_QQ}
+plot(diamond_lm, which = 2)
+```
+
+This is the normal QQ plot of the residuals. If the residuals are normally distributed, then the points should lie along the dotted line. Notice that the points that lie less than -2 on the x-axis and greater than 2 on the x-axis drift away from the line. This is fine, it is the points between -2 and 2 that concerns us the most, because these represent the bulk of the data.
+
+
+# Is the noise independent?
+So where is the plot for independence? There isn't one. Independence can only be assessed by looking at how the data was obtained. The question to keep in mind is:
+
+Could the observations from one subject somehow give us more information about the other observations?
+
+It is a tricky one to assess, and in general requires some knowledge of where the data comes from, what it represents and how it was collected. 
+
+
+# How Do We Predict Using the Model?
+
+```{r fev}
+pacman::p_load(mplot)
+data(fev)
+```
+
+This data is of 654 children between 3 and 19 years old in America in the late 1970’s. We are interested in predicting a person’s lung capacity using their height. The lung capacity is measured by the Force Expiratory Volume (fev) in litres and, in this case, height is measured in inches.
+
+First we will fit a linear model of fev on height.
+
+```{r fev_linear}
+fev_lm  <- lm(fev ~ height, data = fev)
+summary(fev_lm)
+```
+
+We see that the slope is positive: as height increases, lung capacity also increases - which makes sense. We are now going to use our fitted model to predict the lung capacity for a person with a height of five foot - 60 inches. 
+
+create a new data frame with the value that we want
+
+```{r fev_new}
+new_data  <- tibble(
+  height = 60
+)
+```
+
+The command to predict values using a linear regression is - yes you guessed it - predict(). The predict() command takes two arguments:
+
+the model
+the new data.
+
+
+```{r fev_predict1}
+predict(fev_lm, new_data)
+```
+
+
+We predict that a person with a height of 60 inches has a fev of 2.49 litres. We can also get prediction ranges rather than just a single prediction.
+
+```{r fev_predictr}
+predict(fev_lm, new_data, interval = "confidence")
+predict(fev_lm, new_data, interval = "prediction")
+```
+
+We have a confidence interval of (2.45,2.52), and a prediction interval of (1.64,3.33). So what is the difference?
+
+Confidence intervals: these give a range of the fev for all people with a height of 60 inches.
+
+Prediction intervals: these give a range of the fev for a single person with a height of 60 inches.
+
+The confidence interval is about lots of people, while the prediction interval is for a single person. This is why the prediction interval is wider as single people vary more that a group of people.
+
+
+Load the mpg dataset.
+Fit a model with response variable cty and displ as the predictor.
+
+```{r mpg_pre_cd}
+mpg_lm  <- lm(cty ~ displ, data = mpg)
+```
+
+Predict the city fuel efficiency for a car with a displacement of four litres.
+
+```{r mpg_pre_4}
+new_data4  <- 
+  tibble(
+    displ = 4
+  )
+predict(mpg_lm, newdata = new_data4)
+```
+
+Use the predict() function to get the confidence interval for cars with a displacement of four litres.
+
+
+```{r mpg_pre_ci}
+predict(mpg_lm, newdata = new_data4, interval = "confidence")
+```
+
+Use the predict() function to get the prediction interval for a car with a displacement of four litres.
+
+```{r mpg_pre_pr}
+predict(mpg_lm, newdata = new_data4, interval = "prediction")
+```
+
