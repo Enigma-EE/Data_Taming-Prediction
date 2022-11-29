@@ -1,0 +1,319 @@
+---
+title: "Assignment Four"
+author: "Huining H"
+date: "17/09/2021"
+output: pdf_document
+---
+
+# Summary
+
+# Method
+
+## Bivariate summaries
+
+Bivariate summaries is used to find the relationship between evaporation and potential 5 influences: Month, Day of the week,maximum temperature in degrees Celsius, Minimum temperature in degrees Celsius, and Relative humidity, as measured at 9am.
+
+See appendix Bivariate summaries.
+
+Quantitative variables:
+Figure 1 indicating a medium positive correlation between Minimum temperature in degrees Celsius and Evaporation.  
+Figure 2 indicating a weak positive correlation between Maximum temperature in degrees Celsius and Evaporation.  
+Figure 3 indicating a negative correlation between Relative humidity, as measured at 9am and Evaporation.  
+
+
+Categorical variables:
+Figure 5 indicating the trend of month and Evaporation:high at Jan then decrease in the first six months of the year and reach the low point at Jun and increase gradually in the rest of the months. 
+
+Figure 6 indicating no obvious relation between Day of the week and Evaporation
+
+## Model selection
+
+Quantitative variables:
+From the summary table of all quantitative variables, Maxmum temperature in degrees Celsius has a p-value higher than 0.05 (> 0.05) thus is not statistically significant. From table 4,Minimum temperature and Relative humidity both have p-value  less than 0.05 (<2e-16), they are statistically significant.
+
+Categorical variables:
+From table 3, Day of the week has small F value and  p-value higher than 0.05 (> 0.05), therefore not statistically significant. In Table 5 , Month has a p-value  2.2e-16 ***, less than 0.05, it is statistically significant. 
+
+These significant terms seems not differ from what concluded from the bivariate analyses above except for Maximum temperature in degrees Celsius and Evaporation.
+It may due to that bivariate analyses study the correlation measures the degree of a relationship between two variables, where regression is how explanatory  variables affect Response variables, in here is amount of evaporation in a day.
+
+From table 6, the p-value is less than 0.05 in the interaction term between month and 9am relative humidity is statistically significant, humidity seems has a different effect in different months.
+
+
+
+
+# Results
+
+## Model interpretation
+
+Quantitative variables:
+
+The Coefficients Estimate of the model is 7.098, it is one unit increase in Minimum temperature/Relative humidity then expected change in evaporation in a day in mm. In here, one degrees Celsius Minimum temperature change then 0.436mm change in evaporation; one unit Relative humidity at 9am change then -0.102 mm change in in evaporation.
+
+
+Categorical variables:
+Month has P value reduced greatly compare to the lm()output and the p_value is < 0.05. The large F value indicate the variance between months significantly larger than within month.
+
+
+
+# Conclusions
+
+
+
+
+
+# Prediction
+
+For January 13,2020 can we say with 95% confidence that this will occur.
+
+For all other date can we say with 95% confidence that this will not occur.
+
+see appendix Prediction selection.
+
+
+
+# Appendix
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(knitr,dplyr)
+pacman::p_load(tidyverse, inspectdf,tidyr,stringr, stringi)
+pacman::p_load(caret,modelr)
+pacman::p_load(mlbench,mplot)
+pacman::p_load(tidymodels)
+```
+
+## Bivariate summaries
+
+```{r data_melbourne}
+melbourne <- read.csv(file = 'melbourne.csv')
+```
+
+
+```{r data_melbourne_date}
+melbourne_date <- melbourne %>% mutate_at(vars(Date), as.Date, format="%Y-%m-%d")
+# head(melbourne_date)
+```
+
+
+```{r data_melbourne_date1}
+library(lubridate)
+mel_month <- month(as.POSIXlt(melbourne_date$Date, format="%d/%m/%Y"))
+mel_week <- weekdays(as.POSIXlt(melbourne_date$Date, format="%d/%m/%Y"))
+```
+
+Table 1. a table including all variables used in the analysis.
+```{r data_melbourne_date2}
+melbourne_6 <- melbourne_date %>%
+   as_tibble() %>%
+   select( c(2,3,5,11) ) %>%
+   bind_cols(mel_month,mel_week)
+head(melbourne_6)
+```
+
+change column name.
+```{r data_melbourne_colname}
+colnames(melbourne_6) <- c("Min_temp", "Max_temp","Evaporation",
+                           "am_humidity","Month","Day")
+#head(melbourne_6)
+```
+
+ ```{r data_melbourne_conver}
+melbourne_6 <- melbourne_6 %>% mutate(Month = as.character(Month))
+
+head(melbourne_6)
+```
+change month to monthabb
+```{r data_melbourne_mconver}
+m_months <- c("Jan","Feb","Mar",
+              "Apr","May","Jun",
+              "Jul","Aug","Sep",
+              "Oct","Nov","Dec")
+melbourne_6$MonthAbb <- m_months[melbourne_6$Month]
+head(melbourne_6)
+```
+
+
+
+
+Figure 1. a scatter plot of Evaporation on y-axis, Minimum temperature in degrees Celsius on the x-axis.
+```{r melbourne_relat_mint}
+ggplot(melbourne_6, aes(x = Min_temp, y = Evaporation)) + 
+  geom_point()  + 
+  labs(y = "Evaporation", x = "Min_temp") + 
+  scale_color_brewer(palette = "Set1")
+```
+
+
+
+Figure 2. a scatter plot of Evaporation on y-axis, Maximum temperature in degrees Celsius on the x-axis.
+```{r melbourne_relat_maxt}
+ggplot(melbourne_6, aes(x = Max_temp, y = Evaporation)) + 
+  geom_point()  + 
+  labs(y = "Evaporation", x = "Max_temp") + 
+  scale_color_brewer(palette = "Set1")
+```
+
+Figure 3. a scatter plot of Evaporation on y-axis, Relative humidity, as measured at 9am on the x-axis.
+```{r melbourne_relat_humid}
+ggplot(melbourne_6, aes(x = am_humidity, y = Evaporation)) + 
+  geom_point()  + 
+  labs(y = "Evaporation", x = "9am_humidity") + 
+  scale_color_brewer(palette = "Set1")
+```
+Figure 4. a boxplot of Evaporation on y-axis, Month on the x-axis.
+```{r melbourne_relat_Month}
+ggplot(melbourne_6, aes(x = reorder(MonthAbb,Month), 
+                        y = Evaporation)) + 
+  geom_boxplot()  + 
+  labs(y = "Evaporation", x = "Month") + 
+  scale_color_brewer(palette = "Set1")
+```
+
+Figure 5. a boxplot of Evaporation on y-axis, Day of the week on the x-axis.
+```{r melbourne_relat_day}
+ggplot(melbourne_6, aes(x = Day, y = Evaporation)) + 
+  geom_boxplot()  + 
+  labs(y = "Evaporation", x = "Day") + 
+  scale_color_brewer(palette = "Set1")
+```
+
+## Model selection
+
+fit a model
+```{r melbourne_createmodel}
+melbourne.c  <- workflow() %>%
+  add_formula(Evaporation ~ Min_temp+ Max_temp+
+                     am_humidity+ Month + Day) %>%
+  add_model(linear_reg() %>%
+  set_engine("lm")) %>%
+  fit(melbourne_6)
+#melbourne.c
+```
+
+Table 1. a summary table of all variables.
+```{r melbourne_lm}
+melbourne.all  <- lm( Evaporation ~ Min_temp+ Max_temp+
+                     am_humidity+ Month + Day, data = melbourne_6)
+summary(melbourne.all)
+```
+
+
+Table 2. a summary table of quantitative variables.
+```{r melbourne_quantitative_lm}
+melbourne.lm  <- lm( Evaporation ~ Min_temp+ Max_temp+
+                     am_humidity, data = melbourne_6)
+summary(melbourne.lm)
+```
+
+
+Table 3. an anova table of categorical variables.
+```{r melbourne_cate_anova}
+melbourne.lmc  <- lm( Evaporation ~ Month + Day, data = melbourne_6)
+anova(melbourne.lmc)
+```
+
+Table 4. a summary table of quantitative variables with max temperture removed.
+```{r melbourne_model_3}
+melbourne.lm3  <- lm( Evaporation ~  Min_temp+ am_humidity, data = melbourne_6)
+summary(melbourne.lm3)
+```
+
+Table 5. an anova table of categorical variables with Day of the week removed.
+
+melbourne.lm4  <- lm(Evaporation ~  MonthAbb, data = melbourne_6)
+anova(melbourne.lm4)
+
+
+
+Table 6. an anova table of interaction term between month and 9am relative humidity.
+
+melbourne.lmi  <- lm( Evaporation ~ MonthAbb+ am_humidity + 
+                      MonthAbb:am_humidity, data = melbourne_6)
+anova(melbourne.lmi)
+
+
+
+## Model interpretation
+
+
+
+
+## Model diagnostics
+
+```{r melbourne_modelgvl}
+library(gvlma)
+gvmodel <- gvlma(melbourne.lm3)
+summary(gvmodel)
+```
+
+```{r melbourne_residuals1}
+melbourne_mint  <- lm( Evaporation ~  Min_temp, data = melbourne_6)
+plot(fitted(melbourne_mint), resid(melbourne_mint), col = "grey", pch = 20,
+     xlab = "Fitted", ylab = "Residuals", main = "Fitted versus residuals plot")
+abline(h = 0, col = "darkorange", lwd = 2)
+plot(melbourne_mint, which = 1)
+plot(melbourne_mint, which = 3)
+```
+
+```{r melbourne_residuals2}
+melbourne_hum  <- lm( Evaporation ~  am_humidity, data = melbourne_6)
+plot(fitted(melbourne_hum), resid(melbourne_hum), col = "grey", pch = 20,
+     xlab = "Fitted", ylab = "Residuals", main = "Fitted versus residuals plot")
+abline(h = 0, col = "darkorange", lwd = 2)
+plot(melbourne_hum, which = 1)
+plot(melbourne_hum, which = 3)
+```
+
+```{r melbourne_QQ1}
+qqnorm(resid(melbourne_mint), main = "Normal Q-Q Plot", col = "darkgrey")
+qqline(resid(melbourne_mint), col = "dodgerblue", lwd = 2)
+plot(melbourne_mint, which = 2)
+```
+
+```{r melbourne_QQ2}
+qqnorm(resid(melbourne_hum), main = "Normal Q-Q Plot", col = "darkgrey")
+qqline(resid(melbourne_hum), col = "dodgerblue", lwd = 2)
+plot(melbourne_hum, which = 2)
+```
+
+# Prediction
+
+```{r melbourne_lmp}
+melbourne.lmp  <- lm( Evaporation ~  Min_temp+ am_humidity, data = melbourne_6)
+```
+
+
+
+```{r melbourne_predic1}
+new_data1 <- tibble(Min_temp = 13.8,am_humidity = 74)
+predict1 <- predict(melbourne.lmp, new_data1, interval = "confidence")
+predict1 <- as_tibble(predict1)
+```
+
+```{r melbourne_predic2}
+new_data2 <- tibble(Min_temp = 16.4,am_humidity = 57)
+predict2 <- predict(melbourne.lmp, new_data2, interval = "confidence")
+predict2 <- as_tibble(predict2)
+```
+
+```{r melbourne_predic3}
+new_data3 <- tibble(Min_temp = 26.5,am_humidity = 35)
+predict3 <- predict(melbourne.lmp, new_data3, interval = "confidence")
+predict3 <- as_tibble(predict3)
+```
+
+```{r melbourne_predic4}
+new_data4 <- tibble(Min_temp = 6.8,am_humidity = 76)
+predict4 <- predict(melbourne.lmp, new_data4, interval = "confidence")
+predict4 <- as_tibble(predict4)
+```
+
+```{r melbourne_predic}
+melbourne_pred <- 
+  bind_rows(predict1,predict2,predict3,predict4)
+rownames(melbourne_pred) <- c("1","2","3","4")
+melbourne_pred
+```
+
+

@@ -1,0 +1,309 @@
+---
+title: "Assignment Two"
+author: "Huining H"
+date: "20/08/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(knitr,dplyr)
+pacman::p_load(tidyverse, inspectdf,tidyr,stringr, stringi)
+```
+
+
+# Question One: Reading and Cleaning
+
+```{r read_ashes, echo=TRUE}
+ashes <- read.csv(file = 'ashes.csv')
+```
+
+
+**a. Tidy Data**
+
+```{r ashes_long}
+ashes_long <- ashes %>% 
+  pivot_longer(
+    cols = 4:13, 
+    names_to = "Innings", 
+    values_to = "Performance", 
+    values_drop_na = TRUE
+  )
+ashes_long
+```
+
+
+```{r ashes_P, include=FALSE}
+ashes_longP <- c(ashes_long[, 5])
+ashes_longP
+```
+
+#typeof(ashes_longP)
+#unlist(ashes_longP)
+#is.vector(ashes_longP)
+#is.vector(details)
+#typeof(details)
+#stringi:::stri_prepare_arg_string(ashes_longP)
+#library(stringr)
+#as.vector(details)
+
+```{r ashes_long2}
+unl_P <- unlist(ashes_longP)
+details <- str_match(unl_P, "number (\\d+), scored (\\d+) runs from (\\d+)")
+
+df  <- tibble(
+  text = unl_P, 
+  number = details[, 2],
+  scored = details[, 3],
+  balls = details[, 4]
+  )
+df
+```
+
+```{r ashes_bind}
+part_1 <- ashes_long[ ,1:4]
+part_2 <- df[ ,2:4]
+ashes_bind <- bind_cols(part_1, part_2)
+ashes_bind
+```
+
+
+**b. Recode**
+
+
+```{r ashes_lv}
+ashes_lv <- sapply(ashes_bind, n_distinct)
+ashes_lv
+```
+
+
+
+```{r ashes_recode}
+ashes_bind$team <- as.factor(ashes_bind$team)
+ashes_bind$role <- as.factor(ashes_bind$role)
+ashes_bind$number <- as.integer(ashes_bind$number)
+ashes_bind$scored <- as.integer(ashes_bind$scored)
+ashes_bind$balls <- as.integer(ashes_bind$balls)
+ashes_bind
+```
+
+**c. Clean**
+
+levels(ashes_bind$team)
+levels(ashes_bind$role)
+
+```{r clean1}
+levels(ashes_bind$team)[3] <- "England"
+levels(ashes_bind$role)[2] <- "all-rounder"
+```
+
+```{r clean2}
+levels(ashes_bind$role)[2] <- "all-rounder"
+```
+
+```{r clean3}
+levels(ashes_bind$role)[2] <- "batsman"
+```
+
+```{r clean4}
+levels(ashes_bind$role)[3] <- "batsman"
+```
+
+```{r clean5}
+levels(ashes_bind$role)[3] <- "bowler"
+```
+
+```{r check}
+ashes_bind
+```
+
+
+
+
+# Question Two: Univariate Analysis
+
+**a. Score histogram**
+
+```{r ashes_his}
+p1 <- ggplot(ashes_bind, aes(x=scored, color=team, fill=team)) +
+      geom_histogram(position="dodge", alpha=0.5)+
+      scale_color_manual(values=c("#999999", "#E69F00"))+
+      scale_fill_manual(values=c("blue", "black"))+
+      labs(title="Histogram of scores",x="Score")+
+      theme_classic()
+p1
+```
+**b. Describe the distribution of scores**
+
+* shape 
+  - Skewed right.
+* location 
+  - median = 18
+```{r median}
+median(ashes_bind$scored, na.rm = TRUE)
+```
+
+* spread 
+  - range = 0-244, variance = 1706, standard deviation = 41
+```{r spread}
+range(ashes_bind$scored, na.rm = TRUE)
+var(ashes_bind$scored,na.rm = TRUE)
+sd(ashes_bind$scored,na.rm = TRUE)
+```
+* outliers 
+    ->244
+
+
+```{r outliers}
+library(outliers)
+test <- grubbs.test(ashes_bind$scored)
+test
+```
+
+
+**c. Bar chart**
+
+```{r bar}
+p2 <- ggplot(ashes_bind, aes(x=team, color=role, fill=role)) +
+      geom_bar(position="dodge", alpha=0.5)+
+      scale_color_manual(values=c("#999999", "#E69F00","#FF0000", "#0000FF"))+
+      scale_fill_manual(values=c("blue", "black","darkgreen","grey"))+
+      labs(title="Bar chart of teams participating in the series",x="Team")+
+      theme_classic()
+p2
+```
+```{r player}
+t1 <- table(ashes_bind$team)/10
+t1
+```
+
+13 players were used by Australia  team in the series;\
+14 players were used by England   team in the series.
+
+# Question Three: Scores for each team
+
+**a. Histograms faceted by team**
+
+```{r ashes_his_2}
+p3 <- ggplot(ashes_bind, aes(x=scored, color=team, fill=team)) +
+      geom_histogram(position="dodge", alpha=0.5)+
+      scale_color_manual(values=c("#999999", "#E69F00"))+
+      scale_fill_manual(values=c("blue", "black"))+
+      labs(title="Histogram of scores",x="Score")+
+      facet_grid(team ~ .) +
+      theme_classic()
+p3
+```
+
+
+**b. Side-by-side boxplots**
+
+```{r ashes_box}
+p4 <- ggplot(ashes_bind, aes(x=scored, y = team, color=team, fill=team)) +
+      geom_boxplot()+
+      scale_color_manual(values=c("#999999", "#E69F00"))+
+      scale_fill_manual(values=c("navy", "black"))+
+      labs(title="Side-by-side boxplots of scores",x="Score", y ="Team")+
+      coord_flip()+
+      theme_classic()
+p4
+```
+
+
+**c. Average score**
+
+```{r ashes_his_3}
+library(plyr)
+me <- ddply(ashes_bind, "team", summarise,
+            grp.mean=mean(scored,na.rm = TRUE))
+p3_1 <- ggplot(ashes_bind, aes(x=scored, color=team, fill=team)) +
+        geom_histogram(position="dodge", alpha=0.5)+
+        labs(title="Histogram of scores",x="Score")+
+        facet_grid(team ~ .) +
+        geom_vline(data=me, aes(xintercept=grp.mean),
+             linetype="dashed")+
+        scale_color_manual(values=c("#999999", "#E69F00"))+
+        scale_fill_manual(values=c("blue", "black"))+
+        theme_classic()
+p3_1
+```
+
+* From the Histogram of scores above, team Australia have had a higher average score.
+
+* Side-by-side boxplots of scores above, team Australia have had a higher average score.
+
+The distributions of scores
+  -> see Question Two b.
+
+# Question Four: Scoring rates
+
+**a. scatterplot **
+
+```{r scatter}
+p5 <- ggplot(ashes_bind, aes(x=number, y = scored, color=team, shape=team)) +
+      geom_point() +
+      scale_color_manual(values=c("#999999", "#E69F00"))+
+      scale_fill_manual(values=c("navy", "black"))+
+      labs(title="Scatterplot of scores against number of balls",
+           x="Balls", y ="Scored")+
+      geom_smooth(se=FALSE, fullrange=TRUE)
+      theme_classic()
+p5
+```
+
+**b. relationship**
+
+no relationship. Players who face more balls NOT likely to score more runs.
+
+
+**c. scoring_rate**
+
+```{r scoring_rate}
+scoring_rate <-
+  ashes_bind$number/ashes_bind$balls
+p6 <- ggplot(ashes_bind, aes(x=number, y = scoring_rate, color=team, shape=team)) +
+      geom_point() +
+      scale_color_manual(values=c("#999999", "#E69F00"))+
+      scale_fill_manual(values=c("navy", "black"))+
+      labs(title="Scatterplot of scoring rate against number of balls",
+           x="Balls", y ="scoring rate")+
+      geom_smooth(se=FALSE, fullrange=TRUE)
+      theme_classic()
+p6
+```
+
+
+**d. relationship between scoring rate and number of balls**
+
+- Yes,there is a relationship between scoring rate and number of balls;\
+  players who face more balls may likely to score runs more quickly.
+
+# Question Five: Teams’ roles
+
+**a. bar chart of the number of players on each team participating in the series**
+
+```{r p2}
+p2
+```
+
+
+**b. contingency table**
+
+
+
+{r contingency table}
+tablec <- ashes_bind%>%
+            group_by(role, team)%>%
+            summarize(n=n())%>%
+            mutate(prop=n/sum(n))%>%
+            subset(select=c("role","team","prop"))%>%
+            spread(role, prop)%>%
+            kable()
+tablec
+```
+
+c
+
+Aus team is made up of a larger proportion of batters\
+England contains a larger proportion of all-rounders
+

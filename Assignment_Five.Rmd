@@ -1,0 +1,284 @@
+---
+title: "MATHS 1006 Data Taming Assignment Five Questions"
+author: "Huining H"
+date: "20/10/2021"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(knitr,dplyr)
+pacman::p_load(tidyverse, inspectdf,tidyr,stringr, stringi)
+pacman::p_load(caret,modelr)
+pacman::p_load(mlbench,mplot)
+pacman::p_load(tidymodels,glmx)
+pacman::p_load(skimr,vip,yardstick,ranger,kknn)
+pacman::p_load(themis)
+```
+
+# Data Cleaning
+
+Q1.
+```{r data_affairs}
+affairs <- read.csv(file = 'affairs.csv')%>%
+   as_tibble()
+head(affairs,6)
+```
+
+Q2.
+
+Affair is the outcome variable, sex, age, ym, child, religious, education, occupation and rate are the predictor variables.
+
+
+Q3.
+
+```{r skim_affairs}
+affairs %>% 
+  skim()
+```
+
+There is no missing data. 601 observations and 9 variables. 4 variables been read in incorrectly.
+
+
+Q4.
+
+```{r bi_r_affairs_convert}
+affairs$affair <- ifelse(affairs$"affair"==1,"yes","no")
+affairs_c <- 
+  affairs %>% 
+  mutate_at(c("religious","education","occupation","rate"), as.character)
+
+affairs_c <- 
+  affairs_c %>% mutate_if(is.character, as.factor)
+```
+
+
+Q5.
+
+```{r skim_affairs_c}
+affairs_c %>% 
+  skim()
+```
+
+
+a.
+150 people responded as having had an affair. 430 people responded to having children.
+
+
+b.
+```{r age_rel_affairs}
+mean(affairs$age)
+mean(affairs$religious)
+```
+The mean age of respondents is 32.48752. 
+The mean response on the religious scale is 3.116473.
+
+# Exploratory analysis
+
+1.
+
+```{r f_affairs}
+affairs_c %>% 
+  group_by(affair, sex) %>% 
+  summarize(n=n()) %>%
+  mutate(rel.freq = paste0(round(100 * n/sum(n), 0), "%"))
+```
+Of the participants who responded “no” to an affair, 54% of them are female. For those who responded “yes” to having an affair is 48%. There appear to be a difference in the proportion of females who will have an affair opposed to those who will not.
+
+2.
+
+```{r child_affairs}
+affairs_c %>% 
+  group_by(affair, child) %>% 
+  summarize(n=n()) %>%
+  mutate(rel.freq = paste0(round(100 * n/sum(n), 0), "%"))
+```
+
+82% participants who responded “yes” to having an affair had children. 68% participants who responded “no” had children, 32% participants who responded “no” had no children, Based on this, you are more likely to have children if you have an affair. 
+
+# Split and preprocess
+
+1. 
+
+```{r split_affairs}
+set.seed(123)
+affair_split <- initial_split(affairs_c)
+affair_split
+```
+
+450 observations are in the training set and 151 are in the testing set。
+
+
+2.
+
+```{r test_train_affairs}
+affair_train <- training(affair_split )
+affair_test <- testing(affair_split)
+head(affair_train,6)
+```
+
+3.
+
+see ?step_downsample
+
+"This function creates a specification of a recipe step that will remove rows of a data set to make the occurrence of levels in a specific factor level equal."
+
+It reduces the dimensional of the data to a more manageable size and enabling in faster processing of the data.
+
+
+4.
+
+```{r recipe_affairs}
+affair_recipe <- recipe( affair ~ ., data = affair_train) %>%
+  step_downsample(affair)%>%
+  step_dummy(sex,child,religious,education,occupation,rate)%>%
+  step_normalize(all_predictors() )
+affair_recipe
+```
+
+```{r prep_affairs}
+affair_prepped <- affair_recipe %>% 
+  prep()
+affair_prepped
+```
+
+5.
+
+```{r juice_affairs}
+affair_prepped_j <- juice(affair_prepped)
+```
+
+
+```{r bake_affairs}
+affair_recipe_t <- recipe( affair ~ ., data = affair_test) %>%
+  step_downsample(affair)%>%
+  step_dummy(sex,child,religious,education,occupation,rate)%>%
+  step_normalize(all_predictors() )
+
+affair_prepped_t <- affair_recipe %>% prep()
+affair_prepped_t
+affair_prepped_b <- bake(affair_prepped_t, new_data = NULL)
+```
+
+
+6.
+```{r skim_training_affairs}
+affair_prepped_j %>% 
+  skim()
+```
+
+No, losing data on sex_female and child_no and so on in step_downsample. Normalization and prep() have done what expected.
+
+# Tune and fit a model
+
+1.
+
+```{r nearest_neighbours_affairs}
+aff_neighbour_spec <- nearest_neighbor( mode = "classification", neighbors = tune() )%>% 
+ set_engine( "kknn" )
+aff_neighbour_spec 
+```
+
+2.
+
+```{r validation_set_affairs}
+set.seed(1223)
+affairs_cv <- vfold_cv( affair_prepped_j, v = 5 )
+```
+
+
+3.
+```{r grid_affairs}
+a_grid <- grid_regular(neighbors(),levels = 25)
+```
+
+4.
+
+```{r tune_affairs}
+
+a_wf <- workflow() %>%
+  add_model(aff_neighbour_spec) %>% 
+  add_formula(formula = affair ~ .)
+
+a_tuned <- tune_grid(a_wf,
+                     resamples = affairs_cv,
+                     grid = a_grid)
+```
+
+5.
+
+```{r best_affairs}
+best <- select_best(a_tuned)
+best
+```
+
+6.
+
+```{r Finalise_affairs}
+finalize_model(aff_neighbour_spec, best)
+```
+
+7.
+
+```{r fit_affairs}
+affairs_knn <- aff_neighbour_spec %>% 
+ fit( affair ~ ., data = affair_prepped_j )
+affairs_knn
+```
+
+# Evaluation 
+
+1.
+```{r predict_affairs}
+test_pred <- predict( affairs_knn, affair_prepped_b, type = "class" )
+head(test_pred,6)
+```
+
+
+2. 
+```{r bind_affairs}
+bind_grid <- test_pred %>% 
+ bind_cols(test_pred, affair_prepped_b) %>%  rename(
+  affair_p1 = .pred_class...1, affair_p2 = .pred_class...2,
+ )
+
+```
+
+
+
+3.
+```{r cunfusion_affairs}
+library(cvms)
+conf_mat <- confusion_matrix(targets = bind_grid$affair,
+                             predictions = bind_grid$affair_p1)
+
+plot_confusion_matrix(conf_mat$`Confusion Matrix`[[1]])
+```
+4.
+sensitivity 57/(57+54) = 0.5135135, predict having affairs that are actually having affairs is 0.5135135.
+specificity 89/(89+22) = 0.8018018, predict not having affairs that are actually not having affairs is 0.8018018.
+
+
+5.
+```{r tibble_affairs}
+tb <- tibble(
+  'sex' = "male", 
+  'age' = "47",
+  'ym' = "15",
+  'occupation' = "6",
+  'child' = "no",
+  'religious' = "2",
+  'education' = "20",
+  'rate' = "5",
+)
+tb
+```
+
+
+
+
+
+
+
